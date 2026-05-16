@@ -668,6 +668,24 @@ function BrandMark({ variant = "wordmark", tone = "dark", className = "" }) {
   return <img src={src} alt="PEAQ Analytics" className={`${sizeClass} object-contain ${className}`} />;
 }
 
+function BrandedPageHeader({ eyebrow, title, copy, children }) {
+  return (
+    <section className="rounded-[2rem] bg-[#231f20] p-6 text-white shadow-sm md:p-8">
+      <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-3">
+            <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
+            <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">{eyebrow}</span>
+          </div>
+          <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{title}</h1>
+          {copy ? <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">{copy}</p> : null}
+        </div>
+        {children ? <div className="flex flex-wrap gap-3">{children}</div> : null}
+      </div>
+    </section>
+  );
+}
+
 function StarRating({ value }) {
   const rating = Number.isFinite(value) ? value : 0;
   return (
@@ -795,10 +813,13 @@ function OnePageReport({ data, profile, onBack }) {
       </div>
 
       <section className="report-page mx-auto max-w-[10.6in] bg-white text-slate-950">
-        <div className="rounded-[1.25rem] bg-slate-950 p-3 text-white">
+        <div className="rounded-[1.25rem] bg-[#231f20] p-3 text-white">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Athlete Performance Profile</p>
+              <div className="flex items-center gap-2">
+                <BrandMark variant="wordmark" tone="light" className="h-4 max-w-[78px]" />
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">PEAQ Profile</p>
+              </div>
               <h1 className="mt-1 text-3xl font-black tracking-tight">{data.name || "Athlete Name"}</h1>
               <p className="mt-1 text-sm font-semibold text-white/60">{athleteMeta || "Enter athlete details"}</p>
             </div>
@@ -811,7 +832,7 @@ function OnePageReport({ data, profile, onBack }) {
 
         <div className="mt-2 grid grid-cols-[0.95fr_1.05fr] gap-2">
           <div className="space-y-2">
-            <div className="report-card rounded-[1.2rem] bg-slate-950 p-3 text-white">
+            <div className="report-card rounded-[1.2rem] bg-[#231f20] p-3 text-white">
               <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Profile Snapshot</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <div className="rounded-xl bg-slate-900/50 p-2.5 text-white">
@@ -867,6 +888,10 @@ function OnePageReport({ data, profile, onBack }) {
             </div>
           </div>
         </div>
+        <div className="mt-1 flex items-center justify-end gap-1 text-[8px] font-black uppercase tracking-[0.14em] text-slate-400">
+          <span>Powered by</span>
+          <span className="text-[#1e94d2]">PEAQ Analytics</span>
+        </div>
       </section>
     </main>
   );
@@ -876,11 +901,9 @@ function ScoringGuide({ onBack }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
-          <button onClick={onBack} className="mb-4 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/20">← Back</button>
-          <h1 className="text-4xl font-black tracking-tight md:text-5xl">Scoring Guide</h1>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Current standards, score tiers, bucket definitions, and model logic.</p>
-        </section>
+        <BrandedPageHeader eyebrow="Scoring Guide" title="Scoring Guide" copy="PEAQ standards, score tiers, bucket definitions, and model logic.">
+          <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
+        </BrandedPageHeader>
 
         <section className="grid gap-6 lg:grid-cols-2">
           {["Male", "Female"].map((sex) => (
@@ -909,10 +932,13 @@ function DashboardReport({ data, profile, onSave, onBack, onPrintReport, saveLab
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
   return (
     <section className="space-y-6">
-      <div className="overflow-hidden rounded-[2rem] bg-slate-950 text-white shadow-sm">
+      <div className="overflow-hidden rounded-[2rem] bg-[#231f20] text-white shadow-sm">
         <div className="grid gap-6 p-6 md:p-8 lg:grid-cols-[1.05fr_0.95fr]">
           <div>
-            <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/60">Athlete Performance Profile</div>
+            <div className="flex flex-wrap items-center gap-3">
+              <BrandMark variant="wordmark" tone="light" className="h-8 max-w-[144px]" />
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/60">PEAQ Profile</span>
+            </div>
             <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">{data.name || "Athlete Name"}</h2>
             <p className="mt-2 text-sm font-semibold text-white/60">{athleteMeta || "Enter athlete details"}</p>
             {auditNote ? <p className="mt-3 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/60">{auditNote}</p> : null}
@@ -982,16 +1008,9 @@ function ReportBuilder({ data, setData, onSave, onBack, onPrintReport, mode = "n
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">{isCorrection ? "Correct Report" : "Run New Report"}</div>
-              <h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">Athlete Performance Profile</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">{isCorrection ? "Fix a saved report mistake without creating a new testing session." : "Enter athlete data, review the dashboard, print the report, or save it to the athlete library."}</p>
-            </div>
-            <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
-          </div>
-        </section>
+        <BrandedPageHeader eyebrow={isCorrection ? "Correct Report" : "Run New Report"} title="PEAQ Profile" copy={isCorrection ? "Fix a saved report mistake without creating a new testing session." : "Enter athlete data, review the profile, print the report, or save it to the athlete library."}>
+          <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
+        </BrandedPageHeader>
 
         <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1252,16 +1271,10 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
-          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">CSV Import</div>
-              <h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">Import Athlete Reports</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Use the template CSV to import one or multiple athletes into your private workspace.</p>
-            </div>
-            <div className="flex flex-wrap gap-3"><button onClick={downloadTemplate} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Download Template</button><button onClick={onBack} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Back</button></div>
-          </div>
-        </section>
+        <BrandedPageHeader eyebrow="CSV Import" title="Import PEAQ Reports" copy="Use the template CSV to import one or multiple athletes into your workspace.">
+          <button onClick={downloadTemplate} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Download Template</button>
+          <button onClick={onBack} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Back</button>
+        </BrandedPageHeader>
 
         <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1363,11 +1376,9 @@ function AthleteProfile({ athlete, onBack, onOpenReport }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
-          <button onClick={onBack} className="mb-4 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/20">← Back to Athlete Library</button>
-          <h1 className="text-4xl font-black tracking-tight md:text-5xl">{athlete.name}</h1>
-          <p className="mt-2 text-sm font-semibold text-white/60">{getAthleteIdentityLine(athlete)}</p>
-        </section>
+        <BrandedPageHeader eyebrow="Athlete Profile" title={athlete.name} copy={getAthleteIdentityLine(athlete)}>
+          <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
+        </BrandedPageHeader>
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={Number.isFinite(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={Number.isFinite(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
         <ReportComparison reports={athlete.reports} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
@@ -1380,12 +1391,9 @@ function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) 
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
-          <button onClick={onBack} className="mb-4 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/20">← Back to Athlete Profile</button>
-          <p className="text-sm font-black uppercase tracking-wide text-white/50">Saved Report</p>
-          <h1 className="mt-2 text-4xl font-black tracking-tight md:text-5xl">{athlete.name}</h1>
-          <p className="mt-2 text-sm font-semibold text-white/60">{[report.date, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p>
-        </section>
+        <BrandedPageHeader eyebrow="Saved PEAQ Profile" title={athlete.name} copy={[report.date, getCorrectionNote(report)].filter(Boolean).join(" · ")}>
+          <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Profile</button>
+        </BrandedPageHeader>
         <DashboardReport
           data={report.data}
           profile={report.profile}
@@ -1515,7 +1523,7 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
                 <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</span>
               </div>
               <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">PEAQ Analytics workspace for saved reports, athlete profiles, CSV imports, and progress tracking.</p>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">PEAQ Analytics workspace.</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
