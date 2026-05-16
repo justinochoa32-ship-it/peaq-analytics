@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const blankAthlete = {
   name: "",
@@ -67,6 +67,36 @@ const templateHeaders = [
   "mRsi",
   "trapBarE1RM",
 ];
+
+const coachStorageKey = "peaq-analytics-coach-workspace";
+
+function loadStoredCoach() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const storedCoach = window.localStorage.getItem(coachStorageKey);
+    if (!storedCoach) return null;
+
+    const parsedCoach = JSON.parse(storedCoach);
+    return parsedCoach && Array.isArray(parsedCoach.athletes) ? parsedCoach : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredCoach(coach) {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (coach) {
+      window.localStorage.setItem(coachStorageKey, JSON.stringify(coach));
+    } else {
+      window.localStorage.removeItem(coachStorageKey);
+    }
+  } catch {
+    // Keep the app usable if browser storage is unavailable.
+  }
+}
 
 function slugify(value) {
   return String(value || "")
@@ -957,13 +987,16 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
 }
 
 export default function AthleteProfilingMVP() {
-  const [coach, setCoach] = useState(null);
+  const [coach, setCoach] = useState(loadStoredCoach);
   const [view, setView] = useState("auth");
   const [builderData, setBuilderData] = useState(blankAthlete);
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
-  const [selectedReport, setSelectedReport] = useState(null);
   const [printData, setPrintData] = useState(null);
   const [printProfile, setPrintProfile] = useState(null);
+
+  useEffect(() => {
+    saveStoredCoach(coach);
+  }, [coach]);
 
   function openPrintReport(data, profile) {
     setPrintData(data);
@@ -1003,7 +1036,7 @@ export default function AthleteProfilingMVP() {
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
-    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setBuilderData(report.data); setSelectedReport(report); setView("builder"); }} />;
+    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setBuilderData(report.data); setView("builder"); }} />;
   }
   return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) }); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
 }
