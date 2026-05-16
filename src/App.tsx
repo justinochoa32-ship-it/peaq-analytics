@@ -216,33 +216,46 @@ function getReportIdentity(data) {
   };
 }
 
-function findAthleteMatch(athletes, data, preferredAthleteId) {
+function getAthleteMatchResult(athletes, data, preferredAthleteId) {
   if (preferredAthleteId) {
     const preferredAthlete = athletes.find((athlete) => athlete.id === preferredAthleteId);
-    if (preferredAthlete) return preferredAthlete;
+    if (preferredAthlete) return { status: "matched", athlete: preferredAthlete, message: "Existing athlete profile selected." };
   }
 
   const reportIdentity = getReportIdentity(data);
-  if (!reportIdentity.name) return null;
+  if (!reportIdentity.name) return { status: "new", athlete: null, message: "New athlete profile." };
 
   if (reportIdentity.dob) {
     const matches = athletes.filter((athlete) => {
       const athleteIdentity = getAthleteIdentity(athlete);
       return athleteIdentity.name === reportIdentity.name && athleteIdentity.dob === reportIdentity.dob;
     });
-    return matches.length === 1 ? matches[0] : null;
+    if (matches.length === 1) return { status: "matched", athlete: matches[0], message: "Matched existing athlete by name + DOB." };
+    if (matches.length > 1) return { status: "ambiguous", athlete: null, message: "Needs review: multiple profiles share this name + DOB." };
+    return { status: "new", athlete: null, message: "New athlete profile." };
   }
 
-  if (!reportIdentity.sex || !reportIdentity.sport || !reportIdentity.position) return null;
+  const sameNameAthletes = athletes.filter((athlete) => getAthleteIdentity(athlete).name === reportIdentity.name);
+  if (!reportIdentity.sex || !reportIdentity.sport || !reportIdentity.position) {
+    return sameNameAthletes.length
+      ? { status: "ambiguous", athlete: null, message: "Needs review: same name exists and DOB is missing." }
+      : { status: "new", athlete: null, message: "New athlete profile." };
+  }
 
-  const matches = athletes.filter((athlete) => {
+  const matches = sameNameAthletes.filter((athlete) => {
     const athleteIdentity = getAthleteIdentity(athlete);
     return athleteIdentity.name === reportIdentity.name
       && athleteIdentity.sex === reportIdentity.sex
       && athleteIdentity.sport === reportIdentity.sport
       && athleteIdentity.position === reportIdentity.position;
   });
-  return matches.length === 1 ? matches[0] : null;
+  if (matches.length === 1) return { status: "matched", athlete: matches[0], message: "Matched existing athlete by name + details." };
+  if (sameNameAthletes.length > 0) return { status: "ambiguous", athlete: null, message: "Needs review: same name exists, DOB missing." };
+  return { status: "new", athlete: null, message: "New athlete profile." };
+}
+
+function findAthleteMatch(athletes, data, preferredAthleteId) {
+  return getAthleteMatchResult(athletes, data, preferredAthleteId).athlete;
 }
 
 function buildAthleteBase(data, athleteId, existingAthlete) {
@@ -269,6 +282,30 @@ function getAthleteIdentityLine(athlete) {
     athlete.position,
     `${reportCount} ${reportCount === 1 ? "report" : "reports"}`,
   ].filter(Boolean).join(" · ");
+}
+
+function formatDate(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function isIsoDate(value) {
+  return !value || /^\d{4}-\d{2}-\d{2}$/.test(String(value));
+}
+
+function getCorrectionNote(report) {
+  if (!report?.correctedAt) return null;
+  return `Corrected on ${formatDate(report.correctedAt)}`;
+}
+
+function getCoachSummaryText(data, profile) {
+  const athleteName = data.name || "This athlete";
+  return `${athleteName} profiles as a ${profile.archetype}. Primary priority: ${profile.primaryLimiter}. Current strength: ${profile.summaryStrength}. Next block: ${profile.trainingDirection}`;
+}
+
+function importStatusTone(status) {
+  if (status === "Ready") return "bg-emerald-100 text-emerald-800";
+  if (status === "Needs Review") return "bg-amber-100 text-amber-900";
+  return "bg-rose-100 text-rose-700";
 }
 
 function toNumber(value) {
@@ -582,12 +619,6 @@ function buildProfile(data) {
   return { ...profile, trainingFocus: getTrainingFocus(profile) };
 }
 
-function getPossessivePronoun(sex) {
-  if (sex === "Female") return "her";
-  if (sex === "Male") return "his";
-  return "their";
-}
-
 function Field({ label, value, onChange, suffix, type = "text", required = false }) {
   return (
     <label className="block">
@@ -776,7 +807,7 @@ function OnePageReport({ data, profile, onBack }) {
 
             <div className="report-card rounded-[1.2rem] border border-slate-200 bg-white p-3">
               <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Coach Summary</p>
-              <p className="mt-1.5 text-[11px] leading-5 text-slate-700">{data.name || "This athlete"} currently profiles as a <span className="font-black text-slate-950">{profile.archetype}</span>. The primary limiter is <span className="font-black text-slate-950">{profile.primaryLimiter}</span>, while {getPossessivePronoun(profile.sex)} <span className="font-black text-slate-950">{profile.summaryStrength}</span> is showing up as a current strength. {profile.trainingDirection}</p>
+              <p className="mt-1.5 text-[11px] leading-5 text-slate-700">{getCoachSummaryText(data, profile)}</p>
             </div>
 
             <div className="report-card rounded-[1.2rem] border border-slate-200 bg-white p-3">
@@ -851,7 +882,7 @@ function ScoringGuide({ onBack }) {
   );
 }
 
-function DashboardReport({ data, profile, onSave, onBack, onPrintReport }) {
+function DashboardReport({ data, profile, onSave, onBack, onPrintReport, saveLabel = "Save Report", extraActions = null, auditNote = null }) {
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
   return (
     <section className="space-y-6">
@@ -861,6 +892,7 @@ function DashboardReport({ data, profile, onSave, onBack, onPrintReport }) {
             <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/60">Athlete Performance Profile</div>
             <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">{data.name || "Athlete Name"}</h2>
             <p className="mt-2 text-sm font-semibold text-white/60">{athleteMeta || "Enter athlete details"}</p>
+            {auditNote ? <p className="mt-3 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/60">{auditNote}</p> : null}
             <div className="mt-6 rounded-3xl bg-white p-6 text-slate-950 shadow-sm">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -897,7 +929,7 @@ function DashboardReport({ data, profile, onSave, onBack, onPrintReport }) {
         <div className="space-y-6">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <p className="text-sm font-black uppercase tracking-wide text-slate-500">Coach Summary</p>
-            <p className="mt-3 text-base leading-8 text-slate-700">{data.name || "This athlete"} currently profiles as a <span className="font-black text-slate-950">{profile.archetype}</span>. The primary limiter is <span className="font-black text-slate-950">{profile.primaryLimiter}</span>, while {getPossessivePronoun(profile.sex)} <span className="font-black text-slate-950">{profile.summaryStrength}</span> is showing up as a current strength. {profile.trainingDirection}</p>
+            <p className="mt-3 text-base leading-8 text-slate-700">{getCoachSummaryText(data, profile)}</p>
           </div>
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <p className="text-sm font-black uppercase tracking-wide text-slate-500">Training Focus</p>
@@ -916,24 +948,26 @@ function DashboardReport({ data, profile, onSave, onBack, onPrintReport }) {
       <div className="flex flex-wrap gap-3">
         <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
         <button onClick={onPrintReport} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Print Report / PDF</button>
-        <button onClick={onSave} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Save Report</button>
+        {extraActions}
+        {onSave ? <button onClick={onSave} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">{saveLabel}</button> : null}
       </div>
     </section>
   );
 }
 
-function ReportBuilder({ data, setData, onSave, onBack, onPrintReport }) {
+function ReportBuilder({ data, setData, onSave, onBack, onPrintReport, mode = "new" }) {
   const profile = useMemo(() => buildProfile(data), [data]);
   const update = (key, value) => setData((previous) => ({ ...previous, [key]: value }));
+  const isCorrection = mode === "correction";
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Run New Report</div>
+              <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">{isCorrection ? "Correct Report" : "Run New Report"}</div>
               <h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">Athlete Performance Profile</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Enter athlete data, review the dashboard, print the report, or save it to the athlete library.</p>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">{isCorrection ? "Fix a saved report mistake without creating a new testing session." : "Enter athlete data, review the dashboard, print the report, or save it to the athlete library."}</p>
             </div>
             <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
           </div>
@@ -965,7 +999,7 @@ function ReportBuilder({ data, setData, onSave, onBack, onPrintReport }) {
           </div>
         </section>
 
-        <DashboardReport data={data} profile={profile} onSave={() => onSave(data, profile)} onBack={onBack} onPrintReport={() => onPrintReport(data, profile)} />
+        <DashboardReport data={data} profile={profile} onSave={() => onSave(data, profile)} onBack={onBack} onPrintReport={() => onPrintReport(data, profile)} saveLabel={isCorrection ? "Save Correction" : "Save Report"} />
       </div>
     </main>
   );
@@ -974,6 +1008,7 @@ function ReportBuilder({ data, setData, onSave, onBack, onPrintReport }) {
 function buildSavedReport(data, profile) {
   return {
     id: `${slugify(data.name)}-${data.date || new Date().toISOString().slice(0, 10)}-${Date.now()}`,
+    savedAt: new Date().toISOString(),
     date: data.date || new Date().toISOString().slice(0, 10),
     data: { ...data },
     profile,
@@ -983,6 +1018,16 @@ function buildSavedReport(data, profile) {
     secondaryLimiter: profile.secondaryLimiter,
     rating: profile.rating,
     overall: profile.overallScore,
+  };
+}
+
+function buildCorrectedReport(existingReport, data, profile) {
+  return {
+    ...buildSavedReport(data, profile),
+    id: existingReport.id,
+    savedAt: existingReport.savedAt || existingReport.createdAt || new Date().toISOString(),
+    correctedAt: new Date().toISOString(),
+    correctionCount: (existingReport.correctionCount || 0) + 1,
   };
 }
 
@@ -1004,6 +1049,26 @@ function addReportEntries(current, entries) {
       : [{ ...athleteBase, reports: [report] }, ...athletes];
   });
   return { ...normalizedCoach, athletes };
+}
+
+function correctSavedReport(current, athleteId, reportId, data, profile) {
+  if (!current) return current;
+  const normalizedCoach = normalizeCoachWorkspace(current);
+  return {
+    ...normalizedCoach,
+    athletes: normalizedCoach.athletes.map((athlete) => {
+      if (athlete.id !== athleteId) return athlete;
+      const existingReport = athlete.reports.find((report) => report.id === reportId);
+      if (!existingReport) return athlete;
+      const correctedReport = buildCorrectedReport(existingReport, data, profile);
+      const athleteBase = buildAthleteBase(data, athlete.id, athlete);
+      return {
+        ...athlete,
+        ...athleteBase,
+        reports: athlete.reports.map((report) => report.id === reportId ? correctedReport : report).sort((a, b) => b.date.localeCompare(a.date)),
+      };
+    }),
+  };
 }
 
 function getLatestReport(athlete) {
@@ -1097,6 +1162,8 @@ function parseCsv(text) {
 function validateImportRow(row) {
   if (!row.name) return "Missing Required Info";
   if (!row.sex || !["Male", "Female"].includes(row.sex)) return "Invalid Sex";
+  if (!isIsoDate(row.date)) return "Invalid Test Date";
+  if (!isIsoDate(row.dob)) return "Invalid DOB";
   if (!row.bodyweight) return "Missing Bodyweight";
   return "Complete";
 }
@@ -1105,16 +1172,43 @@ function csvRowToAthlete(row) {
   return { ...blankAthlete, ...row, sport: row.sport || "Basketball", date: row.date || new Date().toISOString().slice(0, 10) };
 }
 
-function CsvImport({ onBack, onView, onSaveRows }) {
+function getImportReview(athletes, data, uploadStatus) {
+  if (uploadStatus !== "Complete") {
+    return { status: uploadStatus, message: "Fix this row before saving.", canSave: false };
+  }
+
+  const matchResult = getAthleteMatchResult(athletes, data, null);
+  if (matchResult.status === "ambiguous") {
+    return { status: "Needs Review", message: matchResult.message, canSave: false };
+  }
+  return { status: "Ready", message: matchResult.message, canSave: true };
+}
+
+function CsvImport({ coach, onBack, onView, onSaveRows }) {
   const [csvText, setCsvText] = useState(templateHeaders.join(",") + "\n");
   const rows = useMemo(() => parseCsv(csvText), [csvText]);
-  const reviewedRows = useMemo(() => rows.map((row) => {
-    const data = csvRowToAthlete(row);
-    const profile = buildProfile(data);
-    return { row, data, profile, upload: validateImportRow(row) };
-  }), [rows]);
+  const reviewedRows = useMemo(() => {
+    const preparedRows = rows.map((row) => {
+      const data = csvRowToAthlete(row);
+      return { row, data, profile: buildProfile(data), upload: validateImportRow(row) };
+    });
 
-  const completeRows = reviewedRows.filter((item) => item.upload === "Complete");
+    return preparedRows.map((item) => {
+      let review = getImportReview(coach.athletes, item.data, item.upload);
+      const identity = getReportIdentity(item.data);
+      const duplicateMissingDobRows = preparedRows.filter((otherItem) => {
+        const otherIdentity = getReportIdentity(otherItem.data);
+        return identity.name && !identity.dob && otherIdentity.name === identity.name && !otherIdentity.dob;
+      });
+      if (review.canSave && duplicateMissingDobRows.length > 1) {
+        review = { status: "Needs Review", message: "Needs review: duplicate CSV rows share this name and DOB is missing.", canSave: false };
+      }
+      return { ...item, review, canSave: review.canSave };
+    });
+  }, [coach.athletes, rows]);
+
+  const readyRows = reviewedRows.filter((item) => item.canSave);
+  const needsReviewCount = reviewedRows.filter((item) => item.review.status === "Needs Review").length;
 
   function downloadTemplate() {
     const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,2008-04-15,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
@@ -1154,7 +1248,7 @@ function CsvImport({ onBack, onView, onSaveRows }) {
             <h2 className="text-2xl font-black">Upload or Paste CSV</h2>
             <input type="file" accept=".csv,text/csv" onChange={handleFile} className="mt-5 block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700" />
             <textarea value={csvText} onChange={(event) => setCsvText(event.target.value)} className="mt-5 h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs outline-none focus:border-slate-500" />
-            <div className="mt-5 flex flex-wrap gap-3"><button onClick={() => onSaveRows(completeRows)} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Save All Complete</button><p className="flex items-center text-sm font-bold text-slate-500">{completeRows.length} complete row(s)</p></div>
+            <div className="mt-5 flex flex-wrap gap-3"><button onClick={() => onSaveRows(readyRows)} disabled={readyRows.length === 0} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">Save Ready Rows</button><p className="flex items-center text-sm font-bold text-slate-500">{readyRows.length} ready · {needsReviewCount} need review</p></div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1165,12 +1259,12 @@ function CsvImport({ onBack, onView, onSaveRows }) {
               <div className="divide-y divide-slate-100">
                 {reviewedRows.map((item) => (
                   <div key={item.row.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1fr_0.8fr_1fr_1fr_0.7fr_1fr] lg:items-center">
-                    <div><p className="font-black text-slate-950">{item.data.name || "Missing Name"}</p><p className="text-xs font-semibold text-slate-500">{item.data.sex} · {item.data.date}</p></div>
-                    <div><span className={`rounded-full px-3 py-1 text-xs font-black ${item.upload === "Complete" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{item.upload}</span></div>
+                    <div><p className="font-black text-slate-950">{item.data.name || "Missing Name"}</p><p className="text-xs font-semibold text-slate-500">{[item.data.dob ? `DOB: ${item.data.dob}` : null, item.data.sex, item.data.sport, item.data.position].filter(Boolean).join(" · ")}</p></div>
+                    <div><span className={`rounded-full px-3 py-1 text-xs font-black ${importStatusTone(item.review.status)}`}>{item.review.status}</span><p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{item.review.message}</p></div>
                     <div className="text-sm font-black text-slate-800">{item.profile.archetype}</div>
                     <div><LimiterPill value={item.profile.primaryLimiter} /></div>
                     <div><span className="text-sm font-black text-slate-700">{Number.isFinite(item.profile.rating) ? item.profile.rating.toFixed(1) : "—"}</span></div>
-                    <div className="flex flex-wrap gap-2"><button onClick={() => onView(item.data)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">View</button><button onClick={() => onSaveRows([item])} disabled={item.upload !== "Complete"} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Save</button></div>
+                    <div className="flex flex-wrap gap-2"><button onClick={() => onView(item.data)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">View</button><button onClick={() => onSaveRows([item])} disabled={!item.canSave} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Save</button></div>
                   </div>
                 ))}
                 {reviewedRows.length === 0 && <div className="p-10 text-center"><p className="text-lg font-black text-slate-950">No rows found.</p><p className="text-sm text-slate-500">Paste CSV data or upload a CSV file.</p></div>}
@@ -1256,7 +1350,31 @@ function AthleteProfile({ athlete, onBack, onOpenReport }) {
         </section>
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={Number.isFinite(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={Number.isFinite(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
         <ReportComparison reports={athlete.reports} />
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{report.archetype} · {report.status}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
+      </div>
+    </main>
+  );
+}
+
+function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) {
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
+          <button onClick={onBack} className="mb-4 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/20">← Back to Athlete Profile</button>
+          <p className="text-sm font-black uppercase tracking-wide text-white/50">Saved Report</p>
+          <h1 className="mt-2 text-4xl font-black tracking-tight md:text-5xl">{athlete.name}</h1>
+          <p className="mt-2 text-sm font-semibold text-white/60">{[report.date, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p>
+        </section>
+        <DashboardReport
+          data={report.data}
+          profile={report.profile}
+          onSave={null}
+          onBack={onBack}
+          onPrintReport={() => onPrintReport(report.data, report.profile)}
+          auditNote={getCorrectionNote(report)}
+          extraActions={<button onClick={onCorrect} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Correct Report</button>}
+        />
       </div>
     </main>
   );
@@ -1380,7 +1498,9 @@ export default function AthleteProfilingMVP() {
   const [view, setView] = useState("auth");
   const [builderData, setBuilderData] = useState(blankAthlete);
   const [builderAthleteId, setBuilderAthleteId] = useState(null);
+  const [builderReportId, setBuilderReportId] = useState(null);
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
+  const [selectedReportId, setSelectedReportId] = useState(null);
   const [printData, setPrintData] = useState(null);
   const [printProfile, setPrintProfile] = useState(null);
 
@@ -1399,6 +1519,13 @@ export default function AthleteProfilingMVP() {
       alert("Add an athlete name before saving this report.");
       return;
     }
+    if (builderAthleteId && builderReportId) {
+      setCoach((current) => correctSavedReport(current, builderAthleteId, builderReportId, data, profile));
+      setBuilderReportId(null);
+      setView("workspace");
+      window.setTimeout(() => alert("Report correction saved."), 100);
+      return;
+    }
     const entry = buildReportEntry(data, profile, builderAthleteId);
     setCoach((current) => addReportEntries(current, [entry]));
     setView("workspace");
@@ -1407,7 +1534,12 @@ export default function AthleteProfilingMVP() {
 
   function saveImportedRows(items) {
     if (!coach || items.length === 0) return;
-    const entries = items.map((item) => buildReportEntry(item.data, item.profile));
+    const saveableItems = items.filter((item) => item.canSave !== false);
+    if (saveableItems.length === 0) {
+      alert("No ready rows to save. Review missing DOB or row errors first.");
+      return;
+    }
+    const entries = saveableItems.map((item) => buildReportEntry(item.data, item.profile));
     const reportLabel = entries.length === 1 ? "report" : "reports";
     setCoach((current) => addReportEntries(current, entries));
     setView("workspace");
@@ -1417,12 +1549,18 @@ export default function AthleteProfilingMVP() {
   if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); setView("workspace"); }} />;
   if (view === "guide") return <ScoringGuide onBack={() => setView("workspace")} />;
   if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={() => setView("workspace")} />;
-  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => setView("workspace")} onPrintReport={openPrintReport} />;
-  if (view === "csv") return <CsvImport onBack={() => setView("workspace")} onView={(data) => { setBuilderAthleteId(null); setBuilderData(data); setView("builder"); }} onSaveRows={saveImportedRows} />;
+  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => setView("workspace")} onPrintReport={openPrintReport} mode={builderReportId ? "correction" : "new"} />;
+  if (view === "csv") return <CsvImport coach={coach} onBack={() => setView("workspace")} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); setView("builder"); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
-    if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
-    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setBuilderAthleteId(athlete.id); setBuilderData(report.data); setView("builder"); }} />;
+    if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setSelectedReportId(report.id); setView("saved-report"); }} />;
   }
-  return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) }); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+  if (view === "saved-report") {
+    const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
+    const report = athlete?.reports.find((item) => item.id === selectedReportId);
+    if (!athlete || !report) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+    return <SavedReportView athlete={athlete} report={report} onBack={() => setView("athlete")} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(report.data); setView("builder"); }} onPrintReport={openPrintReport} />;
+  }
+  return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) }); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
 }
