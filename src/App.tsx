@@ -93,6 +93,28 @@ const comparisonMetrics = [
 const progressMetricKeys = ["sprint10", "drill505", "cmjHeight", "mRsi", "relativeStrength"];
 const progressBucketKeys = ["athleticExpression", "power", "strength", "efficiency"];
 
+const correctionAuditFields = [
+  { key: "name", label: "Athlete Name", getValue: (report) => report.data?.name },
+  { key: "dob", label: "DOB", getValue: (report) => report.data?.dob },
+  { key: "sex", label: "Sex", getValue: (report) => report.data?.sex },
+  { key: "sport", label: "Sport", getValue: (report) => report.data?.sport },
+  { key: "position", label: "Position", getValue: (report) => report.data?.position },
+  { key: "height", label: "Height", getValue: (report) => report.data?.height ? `${report.data.height} in` : "" },
+  { key: "bodyweight", label: "Body Weight", getValue: (report) => report.data?.bodyweight ? `${report.data.bodyweight} lb` : "" },
+  { key: "date", label: "Testing Date", getValue: (report) => report.date || report.data?.date },
+  { key: "sprint10", label: "10-Yard Sprint", getValue: (report) => report.data?.sprint10 ? `${report.data.sprint10} sec` : "" },
+  { key: "drill505", label: "505 Drill", getValue: (report) => report.data?.drill505 ? `${report.data.drill505} sec` : "" },
+  { key: "cmjHeight", label: "CMJ Height", getValue: (report) => report.data?.cmjHeight ? `${report.data.cmjHeight} in` : "" },
+  { key: "mRsi", label: "mRSI", getValue: (report) => report.data?.mRsi },
+  { key: "trapBarE1RM", label: "Trap Bar e1RM", getValue: (report) => report.data?.trapBarE1RM ? `${report.data.trapBarE1RM} lb` : "" },
+  { key: "overall", label: "Overall Score", getValue: (report) => Number.isFinite(report.overall) ? report.overall.toFixed(0) : "" },
+  { key: "rating", label: "Profile Rating", getValue: (report) => Number.isFinite(report.rating) ? `${report.rating.toFixed(1)} stars` : "" },
+  { key: "archetype", label: "Archetype", getValue: (report) => report.archetype },
+  { key: "status", label: "Status", getValue: (report) => report.status },
+  { key: "primaryLimiter", label: "Primary Limiter", getValue: (report) => report.primaryLimiter },
+  { key: "secondaryLimiter", label: "Secondary Limiter", getValue: (report) => report.secondaryLimiter },
+];
+
 const sortOptions = [
   { value: "name-asc", label: "Name A-Z" },
   { value: "name-desc", label: "Name Z-A" },
@@ -310,9 +332,57 @@ function isIsoDate(value) {
   return !value || /^\d{4}-\d{2}-\d{2}$/.test(String(value));
 }
 
+function getCorrectionHistory(report) {
+  return Array.isArray(report?.correctionHistory) ? report.correctionHistory : [];
+}
+
 function getCorrectionNote(report) {
   if (!report?.correctedAt) return null;
-  return `Corrected on ${formatDate(report.correctedAt)}`;
+  const correctionCount = report.correctionCount || getCorrectionHistory(report).length;
+  const countText = correctionCount ? ` · ${correctionCount} ${correctionCount === 1 ? "correction" : "corrections"}` : "";
+  return `Corrected on ${formatDate(report.correctedAt)}${countText}`;
+}
+
+function normalizeAuditValue(value) {
+  return String(value ?? "").trim();
+}
+
+function formatAuditValue(value) {
+  const text = normalizeAuditValue(value);
+  return text || "—";
+}
+
+function getCorrectionChanges(previousReport, nextReport) {
+  return correctionAuditFields.map((field) => {
+    const previousValue = field.getValue(previousReport);
+    const nextValue = field.getValue(nextReport);
+    return {
+      key: field.key,
+      label: field.label,
+      previousValue,
+      nextValue,
+      changed: normalizeAuditValue(previousValue) !== normalizeAuditValue(nextValue),
+    };
+  }).filter((item) => item.changed);
+}
+
+function buildCorrectionSnapshot(report, archivedAt) {
+  return {
+    id: `${report.id}-audit-${Date.now()}`,
+    archivedAt,
+    savedAt: report.savedAt || report.createdAt || null,
+    correctedAt: report.correctedAt || null,
+    correctionCount: report.correctionCount || 0,
+    date: report.date,
+    data: { ...report.data },
+    profile: report.profile,
+    archetype: report.archetype,
+    status: report.status,
+    primaryLimiter: report.primaryLimiter,
+    secondaryLimiter: report.secondaryLimiter,
+    rating: report.rating,
+    overall: report.overall,
+  };
 }
 
 function getPossessivePronoun(sex) {
@@ -1238,12 +1308,15 @@ function buildSavedReport(data, profile) {
 }
 
 function buildCorrectedReport(existingReport, data, profile) {
+  const correctedAt = new Date().toISOString();
+  const correctionHistory = [...getCorrectionHistory(existingReport), buildCorrectionSnapshot(existingReport, correctedAt)];
   return {
     ...buildSavedReport(data, profile),
     id: existingReport.id,
     savedAt: existingReport.savedAt || existingReport.createdAt || new Date().toISOString(),
-    correctedAt: new Date().toISOString(),
+    correctedAt,
     correctionCount: (existingReport.correctionCount || 0) + 1,
+    correctionHistory,
   };
 }
 
@@ -1582,6 +1655,66 @@ function AthleteProfile({ athlete, onBack, onOpenReport, onPrintComparison }) {
   );
 }
 
+function CorrectionAuditTrail({ report }) {
+  const history = getCorrectionHistory(report);
+  if (!history.length) return null;
+
+  const auditItems = history.map((revision, index) => {
+    const nextVersion = history[index + 1] || report;
+    return {
+      revision,
+      changes: getCorrectionChanges(revision, nextVersion),
+    };
+  }).reverse();
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-wide text-slate-500">Correction Audit Trail</p>
+          <h2 className="text-2xl font-black tracking-tight">Previous Versions</h2>
+        </div>
+        <span className="rounded-full bg-amber-100 px-4 py-2 text-sm font-black text-amber-900">{history.length} stored {history.length === 1 ? "version" : "versions"}</span>
+      </div>
+      <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500">Corrections update the active PEAQ Profile, but the prior version is kept here so a coach can see what changed.</p>
+
+      <div className="mt-5 grid gap-4">
+        {auditItems.map(({ revision, changes }, index) => (
+          <div key={revision.id || `${revision.archivedAt}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-black text-slate-950">Correction {auditItems.length - index}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-500">Previous version archived on {formatDate(revision.archivedAt)} · Testing date {formatDate(revision.date)}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <StatusPill value={revision.status || "Previous Version"} />
+                <LimiterPill value={revision.primaryLimiter || "Previous Limiter"} />
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="hidden grid-cols-[0.9fr_1fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 md:grid">
+                <div>Field</div><div>Before</div><div>After</div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {changes.length ? changes.map((change) => (
+                  <div key={change.key} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[0.9fr_1fr_1fr] md:items-center">
+                    <div className="font-black text-slate-950">{change.label}</div>
+                    <div className="font-semibold text-slate-500">{formatAuditValue(change.previousValue)}</div>
+                    <div className="font-black text-slate-800">{formatAuditValue(change.nextValue)}</div>
+                  </div>
+                )) : (
+                  <div className="px-4 py-4 text-sm font-semibold text-slate-500">No field-level changes were detected.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -1598,6 +1731,7 @@ function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) 
           auditNote={getCorrectionNote(report)}
           extraActions={<button onClick={onCorrect} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Correct Report</button>}
         />
+        <CorrectionAuditTrail report={report} />
       </div>
     </main>
   );
@@ -1804,7 +1938,7 @@ export default function AthleteProfilingMVP() {
       setCoach((current) => correctSavedReport(current, builderAthleteId, builderReportId, data, profile));
       setBuilderReportId(null);
       setView("workspace");
-      window.setTimeout(() => alert("Report correction saved."), 100);
+      window.setTimeout(() => alert("Correction saved. Previous version kept in the audit trail."), 100);
       return;
     }
     const entry = buildReportEntry(data, profile, builderAthleteId);
