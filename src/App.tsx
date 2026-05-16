@@ -901,15 +901,16 @@ function getComparisonChange(metric, reportA, reportB) {
     return { label: "Missing", tone: "bg-slate-100 text-slate-500", value: "—" };
   }
 
-  const improvement = metric.direction === "lower" ? valueB - valueA : valueA - valueB;
+  const delta = valueB - valueA;
   const tolerance = Math.pow(10, -metric.decimals) / 2;
-  if (Math.abs(improvement) < tolerance) {
+  if (Math.abs(delta) < tolerance) {
     return { label: "No Change", tone: "bg-slate-100 text-slate-600", value: "0" };
   }
 
-  const prefix = improvement > 0 ? "+" : "";
-  const value = `${prefix}${improvement.toFixed(metric.decimals)}${metric.unit ? ` ${metric.unit}` : ""}`;
-  return improvement > 0
+  const improved = metric.direction === "lower" ? delta < 0 : delta > 0;
+  const prefix = delta > 0 ? "+" : "";
+  const value = `${prefix}${delta.toFixed(metric.decimals)}${metric.unit ? ` ${metric.unit}` : ""}`;
+  return improved
     ? { label: "Improved", tone: "bg-emerald-100 text-emerald-800", value }
     : { label: "Declined", tone: "bg-rose-100 text-rose-700", value };
 }
@@ -981,7 +982,7 @@ function CsvImport({ onBack, onView, onSaveRows }) {
   const completeRows = reviewedRows.filter((item) => item.upload === "Complete");
 
   function downloadTemplate() {
-    const example = `${templateHeaders.join(",")}\nZac Owens,Male,2026-05-10,,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
+    const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
     const blob = new Blob([example], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1048,12 +1049,12 @@ function CsvImport({ onBack, onView, onSaveRows }) {
 }
 
 function ReportComparison({ reports }) {
-  const [reportAId, setReportAId] = useState(reports[0]?.id || "");
-  const [reportBId, setReportBId] = useState(reports[1]?.id || reports[0]?.id || "");
+  const [reportAId, setReportAId] = useState(reports[1]?.id || reports[0]?.id || "");
+  const [reportBId, setReportBId] = useState(reports[0]?.id || "");
 
   useEffect(() => {
-    setReportAId(reports[0]?.id || "");
-    setReportBId(reports[1]?.id || reports[0]?.id || "");
+    setReportAId(reports[1]?.id || reports[0]?.id || "");
+    setReportBId(reports[0]?.id || "");
   }, [reports]);
 
   if (reports.length < 2) return null;
@@ -1069,10 +1070,10 @@ function ReportComparison({ reports }) {
           <h2 className="text-2xl font-black">Compare Reports</h2>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
-          <SelectField label="Report A" value={reportA.id} onChange={setReportAId}>
+          <SelectField label="Report A (From)" value={reportA.id} onChange={setReportAId}>
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
-          <SelectField label="Report B" value={reportB.id} onChange={setReportBId}>
+          <SelectField label="Report B (To)" value={reportB.id} onChange={setReportBId}>
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
         </div>
@@ -1080,7 +1081,7 @@ function ReportComparison({ reports }) {
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
         <div className="hidden grid-cols-[1.25fr_0.85fr_0.85fr_0.9fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 md:grid">
-          <div>Metric</div><div>Report A</div><div>Report B</div><div>Change</div>
+          <div>Metric</div><div>Report A</div><div>Report B</div><div>Change A -&gt; B</div>
         </div>
         <div className="divide-y divide-slate-100">
           {comparisonMetrics.map((metric) => {
