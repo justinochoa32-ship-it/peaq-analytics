@@ -982,7 +982,7 @@ function CsvImport({ onBack, onView, onSaveRows }) {
   const completeRows = reviewedRows.filter((item) => item.upload === "Complete");
 
   function downloadTemplate() {
-    const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
+    const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,2008-04-15,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
     const blob = new Blob([example], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
