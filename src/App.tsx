@@ -109,10 +109,10 @@ const starRatingOptions = [
 
 const archetypeGuide = [
   { title: "Complete Athlete", copy: "Elite across athletic expression, power, strength, and efficiency with no obvious primary limiter." },
-  { title: "Developmental", copy: "Multiple buckets need development, requiring a broad training emphasis." },
+  { title: "Foundational Profile", copy: "Solid foundational base, but needs to improve 1-2 categories to reach Complete Athlete status." },
   { title: "Capacity-Limited", copy: "Overall horsepower and capacity are limiting the ceiling of the rest of the profile." },
   { title: "Transfer-Limited", copy: "Capacity exists, but it is not showing up cleanly in athletic expression or efficiency." },
-  { title: "Foundational Profile", copy: "Solid foundational base, but needs to improve 1-2 categories to reach Complete Athlete status." },
+  { title: "Developmental", copy: "Multiple buckets need development, requiring a broad training emphasis." },
   { title: "Profile Pending", copy: "Not enough key testing numbers have been entered yet." },
 ];
 
