@@ -156,8 +156,10 @@ Recommended beta auth:
 
 1. Keep the existing `reports.id`.
 2. Copy the current report snapshot into `correction_history`.
-3. Overwrite the active report fields with corrected raw inputs and calculated output.
-4. Update `corrected_at`, `correction_count`, and `updated_at`.
+3. If the corrected name + DOB exactly matches another athlete owned by the same coach, show a coach-confirmed move option.
+4. If the coach confirms, move the corrected report to the matching athlete ID. If the coach does not confirm, keep it on the current athlete.
+5. Overwrite the active report fields with corrected raw inputs and calculated output.
+6. Update `corrected_at`, `correction_count`, and `updated_at`.
 
 ### CSV Import
 
@@ -190,4 +192,3 @@ Recommended beta auth:
 6. Move CSV save flow to batch-aware Supabase writes.
 7. Add correction audit persistence to `reports.correction_history`.
 8. Add optional export history/storage only after beta coaches need it.
-
