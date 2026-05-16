@@ -107,6 +107,15 @@ const starRatingOptions = [
   { value: "under-3.5", label: "Under 3.5 Stars" },
 ];
 
+const archetypeGuide = [
+  { title: "Complete Athlete", copy: "Elite across athletic expression, power, strength, and efficiency with no obvious primary limiter." },
+  { title: "Developmental", copy: "Multiple buckets need development, requiring a broad training emphasis." },
+  { title: "Capacity-Limited", copy: "Overall horsepower and capacity are limiting the ceiling of the rest of the profile." },
+  { title: "Transfer-Limited", copy: "Capacity exists, but it is not showing up cleanly in athletic expression or efficiency." },
+  { title: "Foundational Profile", copy: "Solid foundational base, but needs to improve 1-2 categories to reach Complete Athlete status." },
+  { title: "Profile Pending", copy: "Not enough key testing numbers have been entered yet." },
+];
+
 function loadStoredCoach() {
   if (typeof window === "undefined") return null;
 
@@ -922,6 +931,19 @@ function ScoringGuide({ onBack }) {
         <section className="grid gap-6 lg:grid-cols-2">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-2xl font-black">Score Tiers</h2><div className="mt-4 space-y-3 text-sm leading-6 text-slate-700"><p><span className="font-black text-slate-950">Standout:</span> 80–100</p><p><span className="font-black text-slate-950">Strong:</span> 60–79</p><p><span className="font-black text-slate-950">Solid:</span> 40–59</p><p><span className="font-black text-slate-950">Needs Work:</span> 20–39</p><p><span className="font-black text-slate-950">Limiter:</span> 0–19</p></div></div>
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-2xl font-black">Scoring Structure</h2><div className="mt-4 space-y-3 text-sm leading-6 text-slate-700"><p><span className="font-black text-slate-950">Athletic Expression:</span> 10-yard sprint + 505.</p><p><span className="font-black text-slate-950">Power:</span> CMJ height.</p><p><span className="font-black text-slate-950">Strength:</span> trap bar relative strength.</p><p><span className="font-black text-slate-950">Efficiency:</span> mRSI + speed-adjusted COD Deficit.</p><p><span className="font-black text-slate-950">Overall:</span> average of the four buckets.</p></div></div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm font-black uppercase tracking-wide text-slate-500">Archetype Guide</p>
+          <h2 className="text-2xl font-black tracking-tight">What PEAQ Profiles Mean</h2>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {archetypeGuide.map((item) => (
+              <div key={item.title} className="rounded-2xl bg-slate-50 p-4">
+                <p className="font-black text-slate-950">{item.title}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{item.copy}</p>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     </main>
