@@ -297,9 +297,21 @@ function getCorrectionNote(report) {
   return `Corrected on ${formatDate(report.correctedAt)}`;
 }
 
+function getPossessivePronoun(sex) {
+  if (sex === "Female") return "her";
+  if (sex === "Male") return "his";
+  return "their";
+}
+
+function capitalize(value) {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
+}
+
 function getCoachSummaryText(data, profile) {
   const athleteName = data.name || "This athlete";
-  return `${athleteName} profiles as a ${profile.archetype}. Primary priority: ${profile.primaryLimiter}. Current strength: ${profile.summaryStrength}. Next block: ${profile.trainingDirection}`;
+  const possessive = getPossessivePronoun(profile.sex);
+  const archetype = profile.archetype.includes("Athlete") ? profile.archetype : `${profile.archetype} athlete`;
+  return `${athleteName} currently profiles as a ${archetype}. ${capitalize(possessive)} primary limiter is ${profile.primaryLimiter}, and ${possessive} secondary limiter is ${profile.secondaryLimiter}. Currently, ${possessive} primary strength is ${profile.summaryStrength}. ${capitalize(possessive)} primary training priority should be ${profile.trainingFocus.primary}, with ${profile.trainingFocus.secondary} layered in as a secondary focus, while maintaining ${profile.trainingFocus.maintain}.`;
 }
 
 function importStatusTone(status) {
@@ -817,9 +829,6 @@ function OnePageReport({ data, profile, onBack }) {
                 <div className="rounded-xl bg-slate-100 p-2"><span className="font-black text-slate-950">Secondary:</span><br />{profile.trainingFocus.secondary}</div>
                 <div className="rounded-xl bg-slate-100 p-2"><span className="font-black text-slate-950">Maintain:</span><br />{profile.trainingFocus.maintain}</div>
               </div>
-              <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[10px] leading-4 text-slate-700">
-                {profile.trainingFocus.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}
-              </ul>
             </div>
           </div>
 
@@ -938,9 +947,6 @@ function DashboardReport({ data, profile, onSave, onBack, onPrintReport, saveLab
               <div className="rounded-2xl bg-slate-100 p-4"><span className="font-black text-slate-950">Secondary:</span> {profile.trainingFocus.secondary}</div>
               <div className="rounded-2xl bg-slate-100 p-4"><span className="font-black text-slate-950">Maintain:</span> {profile.trainingFocus.maintain}</div>
             </div>
-            <ul className="mt-5 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-700">
-              {profile.trainingFocus.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}
-            </ul>
           </div>
         </div>
       </div>
