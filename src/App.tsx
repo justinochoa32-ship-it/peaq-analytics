@@ -90,6 +90,9 @@ const comparisonMetrics = [
   { key: "efficiency", label: "Efficiency", unit: "", direction: "higher", decimals: 0 },
 ];
 
+const progressMetricKeys = ["sprint10", "drill505", "cmjHeight", "mRsi", "relativeStrength"];
+const progressBucketKeys = ["athleticExpression", "power", "strength", "efficiency"];
+
 const sortOptions = [
   { value: "name-asc", label: "Name A-Z" },
   { value: "name-desc", label: "Name Z-A" },
@@ -906,6 +909,158 @@ function OnePageReport({ data, profile, onBack }) {
   );
 }
 
+function ProgressReport({ athlete, reportA, reportB, onBack }) {
+  const metricRows = getProgressRows(progressMetricKeys, reportA, reportB);
+  const bucketRows = getProgressRows(progressBucketKeys, reportA, reportB);
+  const ratingMetric = getComparisonMetric("rating");
+  const overallMetric = getComparisonMetric("overall");
+  const ratingChange = getComparisonChange(ratingMetric, reportA, reportB);
+  const overallChange = getComparisonChange(overallMetric, reportA, reportB);
+  const summaryRows = [
+    { label: "Archetype", from: reportA.archetype, to: reportB.archetype },
+    { label: "Status", from: reportA.status, to: reportB.status },
+  ];
+
+  return (
+    <main className="min-h-screen bg-white p-3 text-slate-950 print:p-0">
+      <style>{`
+        @page { size: letter landscape; margin: 0.25in; }
+        @media print {
+          html, body { background: #ffffff !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .no-print { display: none !important; }
+          .progress-report-page { width: 10.4in; page-break-inside: avoid; page-break-after: avoid; }
+          .progress-report-card { break-inside: avoid; }
+        }
+      `}</style>
+
+      <div className="no-print mx-auto mb-4 flex max-w-7xl flex-wrap gap-3">
+        <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
+        <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
+      </div>
+
+      <section className="progress-report-page mx-auto max-w-[10.4in] bg-white text-slate-950">
+        <div className="rounded-[1.25rem] bg-[#231f20] p-4 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <BrandMark variant="wordmark" tone="light" className="h-5 max-w-[96px]" />
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">PEAQ Progress Report</p>
+              </div>
+              <h1 className="mt-2 text-3xl font-black tracking-tight">{athlete.name}</h1>
+              <p className="mt-1 text-sm font-semibold text-white/60">Report A ({formatDate(reportA.date)}) -&gt; Report B ({formatDate(reportB.date)})</p>
+            </div>
+            <div className="rounded-xl bg-white px-4 py-2 text-right text-slate-950 shadow-sm">
+              <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Direction</p>
+              <p className="text-base font-black">Old to New</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2 grid grid-cols-[0.78fr_1.22fr] gap-2">
+          <div className="space-y-2">
+            <div className="progress-report-card rounded-[1.1rem] border border-slate-200 bg-slate-50 p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Athlete</p>
+              <p className="mt-1 text-xl font-black tracking-tight">{athlete.name}</p>
+              <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-500">{getAthleteIdentityLine(athlete)}</p>
+            </div>
+
+            <div className="progress-report-card rounded-[1.1rem] border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Profile Changes</p>
+              <div className="mt-2 space-y-2">
+                {summaryRows.map((row) => {
+                  const changed = row.from !== row.to;
+                  return (
+                    <div key={row.label} className="rounded-xl bg-slate-50 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{row.label}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${changed ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-600"}`}>{changed ? "Changed" : "No Change"}</span>
+                      </div>
+                      <p className="mt-1 text-xs font-black text-slate-950">{row.from || "—"} -&gt; {row.to || "—"}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="progress-report-card rounded-[1.1rem] border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Score Changes</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-slate-50 p-2">
+                  <p className="text-[10px] font-black text-slate-500">Rating</p>
+                  <p className="mt-1 text-sm font-black text-slate-950">{formatComparisonValue(getComparisonValue(reportA, "rating"), ratingMetric)} -&gt; {formatComparisonValue(getComparisonValue(reportB, "rating"), ratingMetric)}</p>
+                  <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${ratingChange.tone}`}>{ratingChange.label} {ratingChange.value}</span>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-2">
+                  <p className="text-[10px] font-black text-slate-500">Overall</p>
+                  <p className="mt-1 text-sm font-black text-slate-950">{formatComparisonValue(getComparisonValue(reportA, "overall"), overallMetric)} -&gt; {formatComparisonValue(getComparisonValue(reportB, "overall"), overallMetric)}</p>
+                  <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${overallChange.tone}`}>{overallChange.label} {overallChange.value}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="progress-report-card rounded-[1.1rem] border border-slate-200 bg-white p-3">
+              <div className="flex items-end justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Metric Changes</p>
+                  <h2 className="text-lg font-black tracking-tight">Testing Outputs</h2>
+                </div>
+                <p className="text-[9px] font-bold text-slate-500">Sprint and 505: lower is better.</p>
+              </div>
+              <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
+                <div className="grid grid-cols-[1.1fr_0.8fr_0.8fr_0.9fr] bg-slate-950 px-3 py-2 text-[9px] font-black uppercase tracking-wide text-white/60">
+                  <div>Metric</div><div>Report A</div><div>Report B</div><div>Change</div>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {metricRows.map((row) => (
+                    <div key={row.metric.key} className="grid grid-cols-[1.1fr_0.8fr_0.8fr_0.9fr] items-center gap-2 px-3 py-2 text-[11px]">
+                      <div>
+                        <p className="font-black text-slate-950">{row.metric.label}</p>
+                        <p className="text-[9px] font-semibold text-slate-500">{row.metric.direction === "lower" ? "Lower is better" : "Higher is better"}</p>
+                      </div>
+                      <div className="font-black text-slate-700">{formatComparisonValue(row.valueA, row.metric)}</div>
+                      <div className="font-black text-slate-700">{formatComparisonValue(row.valueB, row.metric)}</div>
+                      <div>
+                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${row.change.tone}`}>{row.change.label}</span>
+                        <p className="mt-0.5 font-black text-slate-700">{row.change.value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="progress-report-card rounded-[1.1rem] border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Bucket Changes</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {bucketRows.map((row) => (
+                  <div key={row.metric.key} className="rounded-xl bg-slate-50 p-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-black leading-tight text-slate-950">{row.metric.label}</p>
+                        <p className="mt-0.5 text-[10px] font-semibold text-slate-500">{formatComparisonValue(row.valueA, row.metric)} -&gt; {formatComparisonValue(row.valueB, row.metric)}</p>
+                      </div>
+                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${row.change.tone}`}>{row.change.label}</span>
+                    </div>
+                    <p className="mt-1 text-xs font-black text-slate-700">{row.change.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-1 flex items-center justify-end gap-1 text-[8px] font-black uppercase tracking-[0.14em] text-slate-400">
+          <span>Powered by</span>
+          <span className="text-[#1e94d2]">PEAQ Analytics</span>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function ScoringGuide({ onBack }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -1176,6 +1331,23 @@ function getComparisonChange(metric, reportA, reportB) {
     : { label: "Declined", tone: "bg-rose-100 text-rose-700", value };
 }
 
+function getComparisonMetric(key) {
+  return comparisonMetrics.find((metric) => metric.key === key);
+}
+
+function getProgressRows(keys, reportA, reportB) {
+  return keys.map((key) => {
+    const metric = getComparisonMetric(key);
+    if (!metric) return null;
+    return {
+      metric,
+      valueA: getComparisonValue(reportA, key),
+      valueB: getComparisonValue(reportB, key),
+      change: getComparisonChange(metric, reportA, reportB),
+    };
+  }).filter(Boolean);
+}
+
 function reportOptionLabel(report, index) {
   const label = [report.date, report.archetype].filter(Boolean).join(" · ");
   return `${label || "Saved Report"}${index === 0 ? " (Latest)" : ""}`;
@@ -1332,7 +1504,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
   );
 }
 
-function ReportComparison({ reports }) {
+function ReportComparison({ reports, onPrintComparison }) {
   const [reportAId, setReportAId] = useState(reports[1]?.id || reports[0]?.id || "");
   const [reportBId, setReportBId] = useState(reports[0]?.id || "");
 
@@ -1353,13 +1525,14 @@ function ReportComparison({ reports }) {
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">Report Comparison</p>
           <h2 className="text-2xl font-black">Compare Reports</h2>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
+        <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[640px] lg:grid-cols-[1fr_1fr_auto] lg:items-end">
           <SelectField label="Report A (From)" value={reportA.id} onChange={setReportAId}>
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
           <SelectField label="Report B (To)" value={reportB.id} onChange={setReportBId}>
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
+          {onPrintComparison ? <button onClick={() => onPrintComparison(reportA, reportB)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#167bb0]">Print Progress Report</button> : null}
         </div>
       </div>
 
@@ -1393,7 +1566,7 @@ function ReportComparison({ reports }) {
   );
 }
 
-function AthleteProfile({ athlete, onBack, onOpenReport }) {
+function AthleteProfile({ athlete, onBack, onOpenReport, onPrintComparison }) {
   const latest = athlete.reports[0];
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -1402,7 +1575,7 @@ function AthleteProfile({ athlete, onBack, onOpenReport }) {
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
         </BrandedPageHeader>
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={Number.isFinite(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={Number.isFinite(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
-        <ReportComparison reports={athlete.reports} />
+        <ReportComparison reports={athlete.reports} onPrintComparison={onPrintComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
       </div>
     </main>
@@ -1604,6 +1777,7 @@ export default function AthleteProfilingMVP() {
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [printData, setPrintData] = useState(null);
   const [printProfile, setPrintProfile] = useState(null);
+  const [progressPrint, setProgressPrint] = useState(null);
 
   useEffect(() => {
     saveStoredCoach(coach);
@@ -1613,6 +1787,12 @@ export default function AthleteProfilingMVP() {
     setPrintData(data);
     setPrintProfile(profile);
     setView("print");
+  }
+
+  function openProgressReport(athlete, reportA, reportB) {
+    setProgressPrint({ athlete, reportA, reportB });
+    setSelectedAthleteId(athlete.id);
+    setView("progress-print");
   }
 
   function saveReport(data, profile) {
@@ -1650,12 +1830,13 @@ export default function AthleteProfilingMVP() {
   if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); setView("workspace"); }} />;
   if (view === "guide") return <ScoringGuide onBack={() => setView("workspace")} />;
   if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={() => setView("workspace")} />;
+  if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => setView("athlete")} />;
   if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => setView("workspace")} onPrintReport={openPrintReport} mode={builderReportId ? "correction" : "new"} />;
   if (view === "csv") return <CsvImport coach={coach} onBack={() => setView("workspace")} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); setView("builder"); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
-    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setSelectedReportId(report.id); setView("saved-report"); }} />;
+    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setSelectedReportId(report.id); setView("saved-report"); }} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
