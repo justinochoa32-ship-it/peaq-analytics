@@ -70,6 +70,37 @@ const templateHeaders = [
 
 const coachStorageKey = "peaq-analytics-coach-workspace";
 
+const comparisonMetrics = [
+  { key: "overall", label: "Overall Score", unit: "", direction: "higher", decimals: 0 },
+  { key: "rating", label: "Profile Rating", unit: "stars", direction: "higher", decimals: 1 },
+  { key: "sprint10", label: "10-Yard Sprint", unit: "sec", direction: "lower", decimals: 2 },
+  { key: "drill505", label: "505 Drill", unit: "sec", direction: "lower", decimals: 2 },
+  { key: "cmjHeight", label: "CMJ Height", unit: "in", direction: "higher", decimals: 1 },
+  { key: "mRsi", label: "mRSI", unit: "", direction: "higher", decimals: 2 },
+  { key: "relativeStrength", label: "Relative Strength", unit: "xBW", direction: "higher", decimals: 2 },
+  { key: "athleticExpression", label: "Athletic Expression", unit: "", direction: "higher", decimals: 0 },
+  { key: "power", label: "Power", unit: "", direction: "higher", decimals: 0 },
+  { key: "strength", label: "Strength", unit: "", direction: "higher", decimals: 0 },
+  { key: "efficiency", label: "Efficiency", unit: "", direction: "higher", decimals: 0 },
+];
+
+const sortOptions = [
+  { value: "name-asc", label: "Name A-Z" },
+  { value: "name-desc", label: "Name Z-A" },
+  { value: "rating-desc", label: "Rating high to low" },
+  { value: "rating-asc", label: "Rating low to high" },
+  { value: "date-desc", label: "Most recent testing date" },
+  { value: "date-asc", label: "Least recent testing date" },
+];
+
+const starRatingOptions = [
+  { value: "all", label: "All" },
+  { value: "4.5", label: "4.5+ Stars" },
+  { value: "4.0", label: "4.0+ Stars" },
+  { value: "3.5", label: "3.5+ Stars" },
+  { value: "under-3.5", label: "Under 3.5 Stars" },
+];
+
 function loadStoredCoach() {
   if (typeof window === "undefined") return null;
 
@@ -555,14 +586,15 @@ function OnePageReport({ data, profile, onBack }) {
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
 
   return (
-    <main className="min-h-screen bg-white p-4 text-slate-950 print:p-0">
+    <main className="min-h-screen bg-white p-3 text-slate-950 print:p-0">
       <style>{`
-        @page { size: letter landscape; margin: 0.25in; }
+        @page { size: letter landscape; margin: 0.2in; }
         @media print {
           html, body { background: #ffffff !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .no-print { display: none !important; }
-          .report-page { width: 10.5in; min-height: 7.95in; max-height: 7.95in; overflow: hidden; page-break-after: avoid; }
+          .report-page { width: 10.6in; page-break-inside: avoid; page-break-after: avoid; }
+          .report-page .report-card { break-inside: avoid; }
         }
       `}</style>
 
@@ -571,78 +603,78 @@ function OnePageReport({ data, profile, onBack }) {
         <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
       </div>
 
-      <section className="report-page mx-auto bg-white text-slate-950">
-        <div className="rounded-[1.6rem] bg-slate-950 p-4 text-white">
-          <div className="flex items-start justify-between gap-5">
+      <section className="report-page mx-auto max-w-[10.6in] bg-white text-slate-950">
+        <div className="rounded-[1.25rem] bg-slate-950 p-3 text-white">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/50">Athlete Performance Profile</p>
-              <h1 className="mt-2 text-4xl font-black tracking-tight">{data.name || "Athlete Name"}</h1>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Athlete Performance Profile</p>
+              <h1 className="mt-1 text-3xl font-black tracking-tight">{data.name || "Athlete Name"}</h1>
               <p className="mt-1 text-sm font-semibold text-white/60">{athleteMeta || "Enter athlete details"}</p>
             </div>
-            <div className="rounded-2xl bg-white px-5 py-3 text-center text-slate-950 shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Overall Score</p>
-              <p className="text-4xl font-black tracking-tight">{Number.isFinite(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
+            <div className="rounded-xl bg-white px-4 py-2 text-center text-slate-950 shadow-sm">
+              <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Overall Score</p>
+              <p className="text-3xl font-black tracking-tight">{Number.isFinite(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
             </div>
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-[0.95fr_1.05fr] gap-3">
-          <div className="space-y-3">
-            <div className="rounded-[1.5rem] bg-slate-950 p-4 text-white">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-white/50">Profile Snapshot</p>
-              <div className="mt-3 grid grid-cols-2 gap-2.5">
-                <div className="rounded-2xl bg-slate-900/50 p-3 text-white">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/50">Athlete Archetype</p>
-                  <p className="mt-2 text-base font-black leading-tight">{profile.archetype}</p>
+        <div className="mt-2 grid grid-cols-[0.95fr_1.05fr] gap-2">
+          <div className="space-y-2">
+            <div className="report-card rounded-[1.2rem] bg-slate-950 p-3 text-white">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/50">Profile Snapshot</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-slate-900/50 p-2.5 text-white">
+                  <p className="text-[9px] font-black uppercase tracking-wide text-white/50">Athlete Archetype</p>
+                  <p className="mt-1 text-sm font-black leading-tight">{profile.archetype}</p>
                 </div>
-                <div className="rounded-2xl bg-slate-900/50 p-3 text-white">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-white/50">Profile Rating</p>
-                  <div className="mt-2"><StarRating value={profile.rating} /></div>
+                <div className="rounded-xl bg-slate-900/50 p-2.5 text-white">
+                  <p className="text-[9px] font-black uppercase tracking-wide text-white/50">Profile Rating</p>
+                  <div className="mt-1 scale-90 origin-left"><StarRating value={profile.rating} /></div>
                 </div>
               </div>
-              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Primary Limiter</p><p className="mt-1 text-sm font-black">{profile.primaryLimiter}</p></div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Secondary Limiter</p><p className="mt-1 text-sm font-black">{profile.secondaryLimiter}</p></div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-1 text-sm font-black">{profile.greenFlagOne}</p></div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-1 text-sm font-black">{profile.greenFlagTwo}</p></div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-slate-200 bg-white p-2 text-slate-950"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Primary Limiter</p><p className="mt-0.5 text-xs font-black">{profile.primaryLimiter}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-2 text-slate-950"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Secondary Limiter</p><p className="mt-0.5 text-xs font-black">{profile.secondaryLimiter}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-2 text-slate-950"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-0.5 text-xs font-black">{profile.greenFlagOne}</p></div>
+                <div className="rounded-xl border border-slate-200 bg-white p-2 text-slate-950"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-0.5 text-xs font-black">{profile.greenFlagTwo}</p></div>
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Coach Summary</p>
-              <p className="mt-2 text-[13px] leading-6 text-slate-700">{data.name || "This athlete"} currently profiles as a <span className="font-black text-slate-950">{profile.archetype}</span>. The primary limiter is <span className="font-black text-slate-950">{profile.primaryLimiter}</span>, while {getPossessivePronoun(profile.sex)} <span className="font-black text-slate-950">{profile.summaryStrength}</span> is showing up as a current strength. {profile.trainingDirection}</p>
+            <div className="report-card rounded-[1.2rem] border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Coach Summary</p>
+              <p className="mt-1.5 text-[11px] leading-5 text-slate-700">{data.name || "This athlete"} currently profiles as a <span className="font-black text-slate-950">{profile.archetype}</span>. The primary limiter is <span className="font-black text-slate-950">{profile.primaryLimiter}</span>, while {getPossessivePronoun(profile.sex)} <span className="font-black text-slate-950">{profile.summaryStrength}</span> is showing up as a current strength. {profile.trainingDirection}</p>
             </div>
 
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Training Focus</p>
-              <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] leading-5 text-slate-700">
-                <div className="rounded-2xl bg-slate-100 p-2.5"><span className="font-black text-slate-950">Primary:</span><br />{profile.trainingFocus.primary}</div>
-                <div className="rounded-2xl bg-slate-100 p-2.5"><span className="font-black text-slate-950">Secondary:</span><br />{profile.trainingFocus.secondary}</div>
-                <div className="rounded-2xl bg-slate-100 p-2.5"><span className="font-black text-slate-950">Maintain:</span><br />{profile.trainingFocus.maintain}</div>
+            <div className="report-card rounded-[1.2rem] border border-slate-200 bg-white p-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Training Focus</p>
+              <div className="mt-1.5 grid grid-cols-3 gap-1.5 text-[10px] leading-4 text-slate-700">
+                <div className="rounded-xl bg-slate-100 p-2"><span className="font-black text-slate-950">Primary:</span><br />{profile.trainingFocus.primary}</div>
+                <div className="rounded-xl bg-slate-100 p-2"><span className="font-black text-slate-950">Secondary:</span><br />{profile.trainingFocus.secondary}</div>
+                <div className="rounded-xl bg-slate-100 p-2"><span className="font-black text-slate-950">Maintain:</span><br />{profile.trainingFocus.maintain}</div>
               </div>
-              <ul className="mt-2.5 list-disc space-y-1 pl-4 text-[11px] leading-5 text-slate-700">
+              <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[10px] leading-4 text-slate-700">
                 {profile.trainingFocus.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}
               </ul>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-end justify-between gap-3">
-                <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Category Scores</p><h2 className="text-xl font-black tracking-tight">Profile Buckets</h2></div>
-                <p className="text-[10px] font-bold text-slate-500">Each bucket contributes 25%.</p>
+          <div className="space-y-2">
+            <div className="report-card rounded-[1.2rem] border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-end justify-between gap-2">
+                <div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Category Scores</p><h2 className="text-lg font-black tracking-tight">Profile Buckets</h2></div>
+                <p className="text-[9px] font-bold text-slate-500">Each bucket contributes 25%.</p>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2.5">
-                {profile.bucketItems.map((bucket) => <div key={bucket.key} className="rounded-2xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p><p className="mt-1 text-2xl font-black tracking-tight text-slate-950">{Number.isFinite(bucket.score) ? bucket.score.toFixed(0) : "—"}</p><ScoreBar score={bucket.score} /></div>)}
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {profile.bucketItems.map((bucket) => <div key={bucket.key} className="rounded-xl border border-slate-200 bg-white p-2"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p><p className="mt-0.5 text-xl font-black tracking-tight text-slate-950">{Number.isFinite(bucket.score) ? bucket.score.toFixed(0) : "—"}</p><ScoreBar score={bucket.score} /></div>)}
               </div>
             </div>
-            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-end justify-between gap-3">
-                <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Tested Metrics</p><h2 className="text-xl font-black tracking-tight">Metric Snapshot</h2></div>
+            <div className="report-card rounded-[1.2rem] border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-end justify-between gap-2">
+                <div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Tested Metrics</p><h2 className="text-lg font-black tracking-tight">Metric Snapshot</h2></div>
                 <StatusPill value={profile.status} />
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2.5">
-                {profile.scoreList.map((item) => <div key={item.key} className="rounded-2xl border border-slate-200 bg-white p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-black leading-tight text-slate-950">{item.label}</p><p className="mt-1 text-xs font-bold text-slate-500">{item.display}</p></div><p className="text-lg font-black text-slate-950">{Number.isFinite(item.score) ? Math.round(item.score) : "—"}</p></div><ScoreBar score={item.score} /></div>)}
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {profile.scoreList.map((item) => <div key={item.key} className="rounded-xl border border-slate-200 bg-white p-2"><div className="flex items-start justify-between gap-2"><div><p className="text-[11px] font-black leading-tight text-slate-950">{item.label}</p><p className="mt-0.5 text-[10px] font-bold text-slate-500">{item.display}</p></div><p className="text-base font-black text-slate-950">{Number.isFinite(item.score) ? Math.round(item.score) : "—"}</p></div><ScoreBar score={item.score} /></div>)}
               </div>
             </div>
           </div>
@@ -820,6 +852,84 @@ function buildSavedReport(data, profile) {
   };
 }
 
+function buildReportEntry(data, profile) {
+  const report = buildSavedReport(data, profile);
+  const athleteId = slugify(data.name);
+  const athleteBase = { id: athleteId, name: data.name, sex: data.sex, sport: data.sport, position: data.position, height: data.height, bodyweight: data.bodyweight, reports: [] };
+  return { athleteId, athleteBase, report };
+}
+
+function addReportEntries(current, entries) {
+  if (!current) return current;
+  let athletes = current.athletes;
+  entries.forEach(({ athleteId, athleteBase, report }) => {
+    const exists = athletes.some((athlete) => athlete.id === athleteId);
+    athletes = exists
+      ? athletes.map((athlete) => athlete.id === athleteId ? { ...athlete, ...athleteBase, reports: [report, ...athlete.reports].sort((a, b) => b.date.localeCompare(a.date)) } : athlete)
+      : [{ ...athleteBase, reports: [report] }, ...athletes];
+  });
+  return { ...current, athletes };
+}
+
+function getLatestReport(athlete) {
+  return athlete.reports[0];
+}
+
+function getReportBucketScore(report, key) {
+  const bucket = report?.profile?.bucketItems?.find((item) => item.key === key);
+  return bucket?.score;
+}
+
+function getComparisonValue(report, key) {
+  if (!report) return null;
+  if (key === "overall") return report.overall;
+  if (key === "rating") return report.rating;
+  if (key === "athleticExpression" || key === "power" || key === "strength" || key === "efficiency") return getReportBucketScore(report, key);
+  return report.profile?.raw?.[key];
+}
+
+function formatComparisonValue(value, metric) {
+  if (!Number.isFinite(value)) return "—";
+  const display = value.toFixed(metric.decimals);
+  return metric.unit ? `${display} ${metric.unit}` : display;
+}
+
+function getComparisonChange(metric, reportA, reportB) {
+  const valueA = getComparisonValue(reportA, metric.key);
+  const valueB = getComparisonValue(reportB, metric.key);
+  if (!Number.isFinite(valueA) || !Number.isFinite(valueB)) {
+    return { label: "Missing", tone: "bg-slate-100 text-slate-500", value: "—" };
+  }
+
+  const improvement = metric.direction === "lower" ? valueB - valueA : valueA - valueB;
+  const tolerance = Math.pow(10, -metric.decimals) / 2;
+  if (Math.abs(improvement) < tolerance) {
+    return { label: "No Change", tone: "bg-slate-100 text-slate-600", value: "0" };
+  }
+
+  const prefix = improvement > 0 ? "+" : "";
+  const value = `${prefix}${improvement.toFixed(metric.decimals)}${metric.unit ? ` ${metric.unit}` : ""}`;
+  return improvement > 0
+    ? { label: "Improved", tone: "bg-emerald-100 text-emerald-800", value }
+    : { label: "Declined", tone: "bg-rose-100 text-rose-700", value };
+}
+
+function reportOptionLabel(report, index) {
+  const label = [report.date, report.archetype].filter(Boolean).join(" · ");
+  return `${label || "Saved Report"}${index === 0 ? " (Latest)" : ""}`;
+}
+
+function uniqueOptions(values) {
+  return [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+function starRatingMatches(rating, range) {
+  if (range === "all") return true;
+  if (!Number.isFinite(rating)) return false;
+  if (range === "under-3.5") return rating < 3.5;
+  return rating >= Number(range);
+}
+
 function parseCsvLine(line) {
   const result = [];
   let current = "";
@@ -937,6 +1047,67 @@ function CsvImport({ onBack, onView, onSaveRows }) {
   );
 }
 
+function ReportComparison({ reports }) {
+  const [reportAId, setReportAId] = useState(reports[0]?.id || "");
+  const [reportBId, setReportBId] = useState(reports[1]?.id || reports[0]?.id || "");
+
+  useEffect(() => {
+    setReportAId(reports[0]?.id || "");
+    setReportBId(reports[1]?.id || reports[0]?.id || "");
+  }, [reports]);
+
+  if (reports.length < 2) return null;
+
+  const reportA = reports.find((report) => report.id === reportAId) || reports[0];
+  const reportB = reports.find((report) => report.id === reportBId) || reports[1] || reports[0];
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-wide text-slate-500">Report Comparison</p>
+          <h2 className="text-2xl font-black">Compare Reports</h2>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[520px]">
+          <SelectField label="Report A" value={reportA.id} onChange={setReportAId}>
+            {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
+          </SelectField>
+          <SelectField label="Report B" value={reportB.id} onChange={setReportBId}>
+            {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
+          </SelectField>
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+        <div className="hidden grid-cols-[1.25fr_0.85fr_0.85fr_0.9fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 md:grid">
+          <div>Metric</div><div>Report A</div><div>Report B</div><div>Change</div>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {comparisonMetrics.map((metric) => {
+            const valueA = getComparisonValue(reportA, metric.key);
+            const valueB = getComparisonValue(reportB, metric.key);
+            const change = getComparisonChange(metric, reportA, reportB);
+            return (
+              <div key={metric.key} className="grid gap-3 px-4 py-3 md:grid-cols-[1.25fr_0.85fr_0.85fr_0.9fr] md:items-center">
+                <div>
+                  <p className="font-black text-slate-950">{metric.label}</p>
+                  <p className="text-xs font-semibold text-slate-500">{metric.direction === "lower" ? "Lower is better" : "Higher is better"}</p>
+                </div>
+                <div className="text-sm font-black text-slate-800">{formatComparisonValue(valueA, metric)}</div>
+                <div className="text-sm font-black text-slate-800">{formatComparisonValue(valueB, metric)}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-3 py-1 text-xs font-black ${change.tone}`}>{change.label}</span>
+                  <span className="text-sm font-black text-slate-700">{change.value}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AthleteProfile({ athlete, onBack, onOpenReport }) {
   const latest = athlete.reports[0];
   return (
@@ -948,6 +1119,7 @@ function AthleteProfile({ athlete, onBack, onOpenReport }) {
           <p className="mt-2 text-sm font-semibold text-white/60">{athlete.sex} · {athlete.sport} · {athlete.position}</p>
         </section>
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={Number.isFinite(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={Number.isFinite(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
+        <ReportComparison reports={athlete.reports} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{report.archetype} · {report.status}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
       </div>
     </main>
@@ -972,15 +1144,96 @@ function AuthCard({ onCreateCoach }) {
 }
 
 function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, onGuide, onPrintReport }) {
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [librarySort, setLibrarySort] = useState("name-asc");
+  const [sexFilter, setSexFilter] = useState("all");
+  const [sportFilter, setSportFilter] = useState("all");
+  const [archetypeFilter, setArchetypeFilter] = useState("all");
+  const [limiterFilter, setLimiterFilter] = useState("all");
+  const [ratingFilter, setRatingFilter] = useState("all");
   const totalReports = coach.athletes.reduce((sum, athlete) => sum + athlete.reports.length, 0);
-  const latestReports = coach.athletes.map((athlete) => athlete.reports[0]).filter(Boolean);
+  const latestReports = coach.athletes.map((athlete) => getLatestReport(athlete)).filter(Boolean);
   const avgRating = latestReports.length ? latestReports.reduce((sum, report) => sum + (report.rating || 0), 0) / latestReports.length : null;
+  const filterOptions = useMemo(() => ({
+    sex: uniqueOptions(coach.athletes.map((athlete) => athlete.sex)),
+    sport: uniqueOptions(coach.athletes.map((athlete) => athlete.sport)),
+    archetype: uniqueOptions(coach.athletes.map((athlete) => getLatestReport(athlete)?.archetype)),
+    limiter: uniqueOptions(coach.athletes.map((athlete) => getLatestReport(athlete)?.primaryLimiter)),
+  }), [coach.athletes]);
+  const filteredAthletes = useMemo(() => {
+    const search = librarySearch.trim().toLowerCase();
+    const visible = coach.athletes.filter((athlete) => {
+      const latest = getLatestReport(athlete);
+      const matchesSearch = !search || athlete.name.toLowerCase().includes(search);
+      const matchesSex = sexFilter === "all" || athlete.sex === sexFilter;
+      const matchesSport = sportFilter === "all" || athlete.sport === sportFilter;
+      const matchesArchetype = archetypeFilter === "all" || latest?.archetype === archetypeFilter;
+      const matchesLimiter = limiterFilter === "all" || latest?.primaryLimiter === limiterFilter;
+      const matchesRating = starRatingMatches(latest?.rating, ratingFilter);
+      return matchesSearch && matchesSex && matchesSport && matchesArchetype && matchesLimiter && matchesRating;
+    });
+
+    return [...visible].sort((a, b) => {
+      const latestA = getLatestReport(a);
+      const latestB = getLatestReport(b);
+      if (librarySort === "name-desc") return b.name.localeCompare(a.name);
+      if (librarySort === "rating-desc") return (Number.isFinite(latestB?.rating) ? latestB.rating : -1) - (Number.isFinite(latestA?.rating) ? latestA.rating : -1);
+      if (librarySort === "rating-asc") return (Number.isFinite(latestA?.rating) ? latestA.rating : 999) - (Number.isFinite(latestB?.rating) ? latestB.rating : 999);
+      if (librarySort === "date-desc") return String(latestB?.date || "").localeCompare(String(latestA?.date || ""));
+      if (librarySort === "date-asc") return String(latestA?.date || "").localeCompare(String(latestB?.date || ""));
+      return a.name.localeCompare(b.name);
+    });
+  }, [archetypeFilter, coach.athletes, librarySearch, librarySort, limiterFilter, ratingFilter, sexFilter, sportFilter]);
+  const filtersActive = librarySearch || sexFilter !== "all" || sportFilter !== "all" || archetypeFilter !== "all" || limiterFilter !== "all" || ratingFilter !== "all" || librarySort !== "name-asc";
+
+  function clearLibraryFilters() {
+    setLibrarySearch("");
+    setLibrarySort("name-asc");
+    setSexFilter("all");
+    setSportFilter("all");
+    setArchetypeFilter("all");
+    setLimiterFilter("all");
+    setRatingFilter("all");
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8"><div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"><div><div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</div><h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1><p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Private coach workspace. Reports saved here only appear in this account.</p></div><div className="flex flex-wrap gap-3"><button onClick={onGuide} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Scoring Guide</button><button onClick={onCsvImport} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Import CSV</button><button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button><button onClick={onLogout} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Log Out</button></div></div></section>
+        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8"><div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"><div><div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</div><h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1><p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Private coach workspace. Reports saved here only appear in this account.</p></div><div className="flex flex-wrap gap-3"><button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Import CSV</button><button onClick={onGuide} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Scoring Guide</button><button onClick={onLogout} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Log Out</button></div></div></section>
         <section className="grid gap-4 md:grid-cols-5"><SummaryCard label="Athletes" value={coach.athletes.length} helper="Private profiles" /><SummaryCard label="All Reports" value={totalReports} helper="Saved testing dates" /><SummaryCard label="Recent Reports" value={latestReports.length} helper="Current snapshots" /><SummaryCard label="Avg Rating" value={avgRating ? avgRating.toFixed(1) : "—"} helper="Latest reports only" /><button onClick={onRunReport} className="rounded-3xl bg-slate-950 p-5 text-left text-white shadow-sm hover:bg-slate-800"><p className="text-xs font-black uppercase tracking-wide text-white/50">New Report</p><p className="mt-2 text-2xl font-black tracking-tight">Run Report</p><p className="mt-1 text-sm font-semibold text-white/60">Start a fresh athlete profile</p></button></section>
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><p className="text-sm font-black uppercase tracking-wide text-slate-500">Athlete Library</p><h2 className="text-2xl font-black tracking-tight">Profiles</h2></div><p className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-800">Account Data Is Isolated</p></div>{coach.athletes.length === 0 ? <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No athletes yet.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a CSV to start building your athlete library.</p><div className="mt-6 flex flex-wrap justify-center gap-3"><button onClick={onRunReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100">Import CSV</button></div></div> : <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200"><div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div></div><div className="divide-y divide-slate-100">{coach.athletes.map((athlete) => { const latest = athlete.reports[0]; return <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center"><div><p className="font-black text-slate-950">{athlete.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{athlete.sex} · {athlete.sport} · {athlete.position} · {athlete.reports.length} reports</p></div><div className="text-sm font-black text-slate-800">{latest.archetype}</div><div><StatusPill value={latest.status} /></div><div><LimiterPill value={latest.primaryLimiter} /></div><div><StarRating value={latest.rating} /></div><div className="flex flex-wrap gap-2"><button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button><button onClick={() => onPrintReport(latest.data, latest.profile)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Print Latest</button></div></div>; })}</div></div>}</section>
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div><p className="text-sm font-black uppercase tracking-wide text-slate-500">Athlete Library</p><h2 className="text-2xl font-black tracking-tight">Profiles</h2></div>
+            <p className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-800">Account Data Is Isolated</p>
+          </div>
+
+          {coach.athletes.length > 0 ? (
+            <div className="mt-5 rounded-[2rem] bg-slate-50 p-4">
+              <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+                <label className="block">
+                  <span className="text-sm font-bold text-slate-700">Search Athlete</span>
+                  <input value={librarySearch} onChange={(event) => setLibrarySearch(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none focus:border-slate-500" placeholder="Search by athlete name" />
+                </label>
+                <SelectField label="Sort" value={librarySort} onChange={setLibrarySort}>
+                  {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectField>
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <SelectField label="Sex" value={sexFilter} onChange={setSexFilter}><option value="all">All</option>{filterOptions.sex.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField>
+                <SelectField label="Sport" value={sportFilter} onChange={setSportFilter}><option value="all">All</option>{filterOptions.sport.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField>
+                <SelectField label="Archetype" value={archetypeFilter} onChange={setArchetypeFilter}><option value="all">All</option>{filterOptions.archetype.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField>
+                <SelectField label="Primary Limiter" value={limiterFilter} onChange={setLimiterFilter}><option value="all">All</option>{filterOptions.limiter.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField>
+                <SelectField label="Star Rating" value={ratingFilter} onChange={setRatingFilter}>{starRatingOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-black text-slate-600">Showing {filteredAthletes.length} of {coach.athletes.length} athletes</p>
+                <button onClick={clearLibraryFilters} disabled={!filtersActive} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100 disabled:opacity-40">Clear Filters</button>
+              </div>
+            </div>
+          ) : null}
+
+          {coach.athletes.length === 0 ? <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No athletes yet.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a CSV to start building your athlete library.</p><div className="mt-6 flex flex-wrap justify-center gap-3"><button onClick={onRunReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100">Import CSV</button></div></div> : filteredAthletes.length === 0 ? <div className="mt-5 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No matches found.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Adjust the search or filters to show more athletes.</p></div> : <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200"><div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div></div><div className="divide-y divide-slate-100">{filteredAthletes.map((athlete) => { const latest = getLatestReport(athlete); return <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center"><div><p className="font-black text-slate-950">{athlete.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{athlete.sex} · {athlete.sport} · {athlete.position} · {athlete.reports.length} reports</p></div><div className="text-sm font-black text-slate-800">{latest.archetype}</div><div><StatusPill value={latest.status} /></div><div><LimiterPill value={latest.primaryLimiter} /></div><div><StarRating value={latest.rating} /></div><div className="flex flex-wrap gap-2"><button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button><button onClick={() => onPrintReport(latest.data, latest.profile)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Print Latest</button></div></div>; })}</div></div>}
+        </section>
       </div>
     </main>
   );
@@ -1009,23 +1262,19 @@ export default function AthleteProfilingMVP() {
       alert("Add an athlete name before saving this report.");
       return;
     }
-    const report = buildSavedReport(data, profile);
-    const athleteId = slugify(data.name);
-    const athleteBase = { id: athleteId, name: data.name, sex: data.sex, sport: data.sport, position: data.position, height: data.height, bodyweight: data.bodyweight, reports: [] };
-    setCoach((current) => {
-      const exists = current.athletes.some((athlete) => athlete.id === athleteId);
-      const athletes = exists
-        ? current.athletes.map((athlete) => athlete.id === athleteId ? { ...athlete, ...athleteBase, reports: [report, ...athlete.reports].sort((a, b) => b.date.localeCompare(a.date)) } : athlete)
-        : [{ ...athleteBase, reports: [report] }, ...current.athletes];
-      return { ...current, athletes };
-    });
+    const entry = buildReportEntry(data, profile);
+    setCoach((current) => addReportEntries(current, [entry]));
     setView("workspace");
     window.setTimeout(() => alert("Report saved to Athlete Library."), 100);
   }
 
   function saveImportedRows(items) {
-    items.forEach((item) => saveReport(item.data, item.profile));
+    if (!coach || items.length === 0) return;
+    const entries = items.map((item) => buildReportEntry(item.data, item.profile));
+    const reportLabel = entries.length === 1 ? "report" : "reports";
+    setCoach((current) => addReportEntries(current, entries));
     setView("workspace");
+    window.setTimeout(() => alert(`${entries.length} ${reportLabel} saved to Athlete Library.`), 100);
   }
 
   if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); setView("workspace"); }} />;
