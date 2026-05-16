@@ -1550,6 +1550,7 @@ function getImportReview(athletes, data, uploadStatus) {
 
 function CsvImport({ coach, onBack, onView, onSaveRows }) {
   const [csvText, setCsvText] = useState(templateHeaders.join(",") + "\n");
+  const [activeFixRowId, setActiveFixRowId] = useState(null);
   const rows = useMemo(() => parseCsv(csvText), [csvText]);
   const reviewedRows = useMemo(() => {
     const preparedRows = rows.map((row) => {
@@ -1575,6 +1576,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
   const needsReviewCount = reviewedRows.filter((item) => item.review.status === "Needs Review").length;
 
   function updateRowField(rowId, field, value) {
+    setActiveFixRowId(rowId);
     const updatedRows = rows.map((row) => row.id === rowId ? { ...row, [field]: value } : row);
     setCsvText(rowsToCsvText(updatedRows));
   }
@@ -1594,7 +1596,10 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setCsvText(String(reader.result || ""));
+    reader.onload = () => {
+      setActiveFixRowId(null);
+      setCsvText(String(reader.result || ""));
+    };
     reader.readAsText(file);
   }
 
@@ -1610,7 +1615,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-2xl font-black">Upload or Paste CSV</h2>
             <input type="file" accept=".csv,text/csv" onChange={handleFile} className="mt-5 block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700" />
-            <textarea value={csvText} onChange={(event) => setCsvText(event.target.value)} className="mt-5 h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs outline-none focus:border-slate-500" />
+            <textarea value={csvText} onChange={(event) => { setActiveFixRowId(null); setCsvText(event.target.value); }} className="mt-5 h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs outline-none focus:border-slate-500" />
             <div className="mt-5 flex flex-wrap gap-3"><button onClick={() => onSaveRows(readyRows)} disabled={readyRows.length === 0} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">Save Ready Rows</button><p className="flex items-center text-sm font-bold text-slate-500">{readyRows.length} ready · {needsReviewCount} need review</p></div>
           </div>
 
@@ -1620,19 +1625,24 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
             <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
               <div className="hidden grid-cols-[1fr_0.8fr_1fr_1fr_0.7fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Upload</div><div>Profile</div><div>Limiter</div><div>Rating</div><div>Actions</div></div>
               <div className="divide-y divide-slate-100">
-                {reviewedRows.map((item) => (
-                  <div key={item.row.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1fr_0.8fr_1fr_1fr_0.7fr_1fr] lg:items-center">
-                    <div><p className="font-black text-slate-950">{item.data.name || "Missing Name"}</p><p className="text-xs font-semibold text-slate-500">{[item.data.dob ? `DOB: ${item.data.dob}` : null, item.data.sex, item.data.sport, item.data.position].filter(Boolean).join(" · ")}</p></div>
-                    <div><span className={`rounded-full px-3 py-1 text-xs font-black ${importStatusTone(item.review.status)}`}>{item.review.status}</span><p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{item.review.message}</p></div>
-                    <div className="text-sm font-black text-slate-800">{item.profile.archetype}</div>
-                    <div><LimiterPill value={item.profile.primaryLimiter} /></div>
-                    <div><span className="text-sm font-black text-slate-700">{Number.isFinite(item.profile.rating) ? item.profile.rating.toFixed(1) : "—"}</span></div>
-                    <div className="flex flex-wrap gap-2"><button onClick={() => onView(item.data)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">View</button><button onClick={() => onSaveRows([item])} disabled={!item.canSave} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Save</button></div>
-                    {!item.canSave ? (
+                {reviewedRows.map((item) => {
+                  const showFixPanel = !item.canSave || activeFixRowId === item.row.id;
+                  return (
+                    <div key={item.row.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1fr_0.8fr_1fr_1fr_0.7fr_1fr] lg:items-center">
+                      <div><p className="font-black text-slate-950">{item.data.name || "Missing Name"}</p><p className="text-xs font-semibold text-slate-500">{[item.data.dob ? `DOB: ${item.data.dob}` : null, item.data.sex, item.data.sport, item.data.position].filter(Boolean).join(" · ")}</p></div>
+                      <div><span className={`rounded-full px-3 py-1 text-xs font-black ${importStatusTone(item.review.status)}`}>{item.review.status}</span><p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{item.review.message}</p></div>
+                      <div className="text-sm font-black text-slate-800">{item.profile.archetype}</div>
+                      <div><LimiterPill value={item.profile.primaryLimiter} /></div>
+                      <div><span className="text-sm font-black text-slate-700">{Number.isFinite(item.profile.rating) ? item.profile.rating.toFixed(1) : "—"}</span></div>
+                      <div className="flex flex-wrap gap-2"><button onClick={() => onView(item.data)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">View</button><button onClick={() => onSaveRows([item])} disabled={!item.canSave} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Save</button></div>
+                      {showFixPanel ? (
                       <div className="rounded-2xl bg-slate-50 p-4 lg:col-span-6">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                           <p className="text-sm font-black text-slate-950">Fix this row</p>
-                          <p className="text-xs font-semibold text-slate-500">Edits update the CSV text and re-check automatically.</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-xs font-semibold text-slate-500">Edits update the CSV text and re-check automatically.</p>
+                            {item.canSave ? <button onClick={() => setActiveFixRowId(null)} className="rounded-xl bg-white px-3 py-1 text-xs font-black text-slate-700 shadow-sm hover:bg-slate-100">Done</button> : null}
+                          </div>
                         </div>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                           <CsvQuickFixField label="Name" value={item.row.name} onChange={(value) => updateRowField(item.row.id, "name", value)} />
@@ -1649,9 +1659,10 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
                           <CsvQuickFixField label="Body Weight" value={item.row.bodyweight} onChange={(value) => updateRowField(item.row.id, "bodyweight", value)} />
                         </div>
                       </div>
-                    ) : null}
-                  </div>
-                ))}
+                      ) : null}
+                    </div>
+                  );
+                })}
                 {reviewedRows.length === 0 && <div className="p-10 text-center"><p className="text-lg font-black text-slate-950">No rows found.</p><p className="text-sm text-slate-500">Paste CSV data or upload a CSV file.</p></div>}
               </div>
             </div>

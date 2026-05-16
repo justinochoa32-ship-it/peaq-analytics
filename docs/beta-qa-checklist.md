@@ -82,6 +82,7 @@ Run this checklist before merging beta-facing changes or inviting coaches to tes
 - Import a row matching an existing athlete by name + DOB and confirm it attaches to the existing profile.
 - Import ambiguous same-name rows with missing DOB and confirm they show Needs Review.
 - Fix a Needs Review row from the inline row editor and confirm it re-checks automatically.
+- Confirm the inline row editor stays open while typing multi-character values, then closes with Done.
 - Save the fixed row once it changes to Ready.
 
 ## Reports And PDFs
