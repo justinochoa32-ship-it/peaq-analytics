@@ -1,0 +1,1009 @@
+import React, { useMemo, useState } from "react";
+
+const blankAthlete = {
+  name: "",
+  sex: "Male",
+  date: new Date().toISOString().slice(0, 10),
+  dob: "",
+  sport: "Basketball",
+  position: "",
+  height: "",
+  bodyweight: "",
+  sprint10: "",
+  drill505: "",
+  cmjHeight: "",
+  mRsi: "",
+  trapBarE1RM: "",
+};
+
+const standards = {
+  Male: {
+    sprint10: { label: "10-Yard Sprint", unit: "sec", direction: "lower", poor: 1.95, elite: 1.5 },
+    drill505: { label: "505 Drill", unit: "sec", direction: "lower", poor: 2.5, elite: 1.95 },
+    codDeficit: { label: "COD Deficit", unit: "sec", direction: "lower", poor: 1.05, elite: 0.55 },
+    cmjHeight: { label: "CMJ Height", unit: "in", direction: "higher", poor: 12, elite: 22 },
+    mRsi: { label: "mRSI", unit: "", direction: "higher", poor: 0.4, elite: 0.75 },
+    relativeStrength: { label: "Relative Strength", unit: "xBW", direction: "higher", poor: 1.25, elite: 2.25 },
+  },
+  Female: {
+    sprint10: { label: "10-Yard Sprint", unit: "sec", direction: "lower", poor: 2.0, elite: 1.6 },
+    drill505: { label: "505 Drill", unit: "sec", direction: "lower", poor: 2.7, elite: 2.1 },
+    codDeficit: { label: "COD Deficit", unit: "sec", direction: "lower", poor: 1.05, elite: 0.55 },
+    cmjHeight: { label: "CMJ Height", unit: "in", direction: "higher", poor: 8, elite: 16 },
+    mRsi: { label: "mRSI", unit: "", direction: "higher", poor: 0.3, elite: 0.65 },
+    relativeStrength: { label: "Relative Strength", unit: "xBW", direction: "higher", poor: 1.15, elite: 2.0 },
+  },
+};
+
+const flagMap = {
+  sprint10: "Acceleration",
+  drill505: "COD",
+  codDeficit: "COD Efficiency",
+  cmjHeight: "Jump Output",
+  mRsi: "Jump Efficiency",
+  relativeStrength: "Strength Capacity",
+};
+
+const summaryStrengthMap = {
+  sprint10: "acceleration ability",
+  drill505: "change of direction ability",
+  cmjHeight: "jump output",
+  mRsi: "jump efficiency",
+  relativeStrength: "strength capacity",
+};
+
+const templateHeaders = [
+  "name",
+  "sex",
+  "date",
+  "dob",
+  "sport",
+  "position",
+  "height",
+  "bodyweight",
+  "sprint10",
+  "drill505",
+  "cmjHeight",
+  "mRsi",
+  "trapBarE1RM",
+];
+
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function toNumber(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (text === "") return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function average(values) {
+  const clean = values.filter((value) => Number.isFinite(value));
+  return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : null;
+}
+
+function scoreMetric(value, standard) {
+  if (!Number.isFinite(value) || !standard) return null;
+  if (standard.direction === "lower") {
+    return clamp(((standard.poor - value) / (standard.poor - standard.elite)) * 100, 0, 100);
+  }
+  return clamp(((value - standard.poor) / (standard.elite - standard.poor)) * 100, 0, 100);
+}
+
+function scoreLabel(score) {
+  if (!Number.isFinite(score)) return "Missing";
+  if (score >= 80) return "Standout";
+  if (score >= 60) return "Strong";
+  if (score >= 40) return "Solid";
+  if (score >= 20) return "Needs Work";
+  return "Limiter";
+}
+
+function scoreColor(score) {
+  if (!Number.isFinite(score)) return "bg-slate-200";
+  if (score >= 80) return "bg-emerald-500";
+  if (score >= 40) return "bg-yellow-300";
+  return "bg-rose-500";
+}
+
+function getProfileRating(score, status) {
+  if (!Number.isFinite(score)) return null;
+  const complete = status && status.includes("Complete");
+  if (score >= 85 && complete) return 5;
+  if (score >= 75) return 4.5;
+  if (score >= 65) return 4;
+  if (score >= 55) return 3.5;
+  if (score >= 45) return 3;
+  if (score >= 35) return 2.5;
+  if (score >= 25) return 2;
+  if (score >= 15) return 1.5;
+  if (score > 0) return 1;
+  return 0.5;
+}
+
+function getTrainingFocus(profile) {
+  const focusByLimiter = {
+    Acceleration: {
+      primary: "Acceleration / first-step speed",
+      secondary: "Force application and sprint mechanics",
+      maintain: "COD, power, and strength qualities",
+      bullets: [
+        "Prioritize speed work with high intent and full recovery.",
+        "Use resisted sprints and projection-focused technical work.",
+        "Emphasize power in the weight room that translates to speed.",
+      ],
+    },
+    COD: {
+      primary: "Change of direction execution",
+      secondary: "Deceleration and re-acceleration mechanics",
+      maintain: "Linear speed, power and strength qualities",
+      bullets: [
+        "Prioritize deceleration control, plant positions, and re-acceleration quality.",
+        "Use planned COD progressions before layering in reactive complexity.",
+        "Maintain sprint and strength qualities while improving turn efficiency.",
+      ],
+    },
+    "COD Efficiency": {
+      primary: "COD efficiency",
+      secondary: "Braking, turning, and re-acceleration relative to speed",
+      maintain: "Raw athletic expression outputs",
+      bullets: [
+        "Reduce the time lost when transitioning from sprinting into the cut and re-accelerating out.",
+        "Use deceleration-to-re-acceleration progressions and side-specific COD work.",
+        "Track left/right 505 performance when available to identify side-specific priorities.",
+      ],
+    },
+    "Jump Output": {
+      primary: "Vertical power output",
+      secondary: "High-intent jump expression",
+      maintain: "Strength and athletic expression qualities",
+      bullets: [
+        "Prioritize unloaded and lightly loaded jumps performed with maximal intent.",
+        "Use loaded jumps, medicine ball work, and explosive lift variations when appropriate.",
+        "Maintain strength and COD qualities without letting training volume suppress jump output.",
+      ],
+    },
+    "Jump Efficiency": {
+      primary: "Jump efficiency / mRSI",
+      secondary: "Faster force expression in the CMJ",
+      maintain: "Jump height, strength, and athletic expression",
+      bullets: [
+        "Improve how quickly the athlete converts the countermovement into takeoff output.",
+        "Use pogos, drop-catch reps, low-amplitude plyometrics, and depth jump progressions.",
+        "Keep jump quality high and avoid excessive fatigue during power sessions.",
+      ],
+    },
+    "Strength Capacity": {
+      primary: "Relative strength capacity",
+      secondary: "Force production and tissue capacity",
+      maintain: "Jump and COD qualities",
+      bullets: [
+        "Prioritize progressive strength development relative to body weight.",
+        "Use trap bar, split squat, hinge, and single-leg strength progressions.",
+        "Maintain sprint, jump, and COD exposure so new strength can transfer over time.",
+      ],
+    },
+  };
+
+  if (profile.archetype === "Developmental") {
+    return {
+      primary: "Broad athletic development",
+      secondary: "Build the base across multiple buckets",
+      maintain: "Movement quality and consistency",
+      bullets: [
+        "Build strength, coordination, sprint exposure, landing/braking skill, and basic power.",
+        "Keep the program simple and repeatable while the base develops.",
+        "Use re-testing to identify which bucket becomes the next specific priority.",
+      ],
+    };
+  }
+
+  if (profile.archetype === "Transfer-Limited") {
+    return {
+      primary: "Transfer to athletic expression",
+      secondary: "Acceleration, deceleration, re-acceleration, and intent",
+      maintain: "Strength and power qualities",
+      bullets: [
+        "Bridge capacity to the court with sprinting, deceleration, CoD, rhythm, stiffness, and intent.",
+        "Prioritize acceleration, deceleration, re-acceleration, rhythm, stiffness, and intent.",
+        "Maintain strength and power with enough exposure, but avoid chasing capacity that does not express.",
+      ],
+    };
+  }
+
+  return focusByLimiter[profile.primaryLimiter] || {
+    primary: profile.primaryLimiter || "Primary training priority",
+    secondary: profile.secondaryLimiter || "Secondary training priority",
+    maintain: profile.summaryStrength || "Strongest current quality",
+    bullets: [
+      "Use the primary limiter to guide the next training block.",
+      "Maintain the athlete’s strongest qualities with low-dose exposure.",
+      "Re-test after the next training phase to confirm the profile is moving in the right direction.",
+    ],
+  };
+}
+
+function buildProfile(data) {
+  const sex = data.sex === "Female" ? "Female" : "Male";
+  const norms = standards[sex];
+  const bodyweight = toNumber(data.bodyweight);
+  const sprint10 = toNumber(data.sprint10);
+  const drill505 = toNumber(data.drill505);
+  const codDeficit = Number.isFinite(sprint10) && Number.isFinite(drill505) ? drill505 - sprint10 : null;
+  const cmjHeight = toNumber(data.cmjHeight);
+  const mRsi = toNumber(data.mRsi);
+  const trapBarE1RM = toNumber(data.trapBarE1RM);
+  const relativeStrength = Number.isFinite(bodyweight) && bodyweight > 0 && Number.isFinite(trapBarE1RM) ? trapBarE1RM / bodyweight : null;
+
+  const rawMetrics = { sprint10, drill505, codDeficit, cmjHeight, mRsi, relativeStrength };
+  const sprint10Score = scoreMetric(sprint10, norms.sprint10);
+  const rawCodDeficitScore = scoreMetric(codDeficit, norms.codDeficit);
+  const codDeficitScore = Number.isFinite(rawCodDeficitScore) && Number.isFinite(sprint10Score)
+    ? Math.min(rawCodDeficitScore, sprint10Score + 30)
+    : rawCodDeficitScore;
+
+  const scores = {
+    sprint10: sprint10Score,
+    drill505: scoreMetric(drill505, norms.drill505),
+    codDeficit: codDeficitScore,
+    cmjHeight: scoreMetric(cmjHeight, norms.cmjHeight),
+    mRsi: scoreMetric(mRsi, norms.mRsi),
+    relativeStrength: scoreMetric(relativeStrength, norms.relativeStrength),
+  };
+
+  const scoreList = Object.keys(rawMetrics).map((key) => ({
+    key,
+    label: norms[key].label,
+    unit: norms[key].unit,
+    value: rawMetrics[key],
+    score: scores[key],
+    display: Number.isFinite(rawMetrics[key]) ? `${rawMetrics[key].toFixed(key === "mRsi" || key === "relativeStrength" ? 2 : 2)}${norms[key].unit ? ` ${norms[key].unit}` : ""}` : "Missing",
+  }));
+
+  const athleticExpression = average([scores.sprint10, scores.drill505]);
+  const power = scores.cmjHeight;
+  const strength = scores.relativeStrength;
+  const efficiency = average([scores.mRsi, scores.codDeficit]);
+  const overall = average([athleticExpression, power, strength, efficiency]);
+
+  const bucketItems = [
+    { key: "athleticExpression", label: "Athletic Expression", score: athleticExpression, status: "Transfer-Limited" },
+    { key: "power", label: "Power", score: power, status: "Power-Limited" },
+    { key: "strength", label: "Strength", score: strength, status: "Strength-Limited" },
+    { key: "efficiency", label: "Efficiency", score: efficiency, status: "Efficiency-Limited" },
+  ];
+
+  const scoredBucketItems = bucketItems.filter((item) => Number.isFinite(item.score));
+  const lowestBucket = [...scoredBucketItems].sort((a, b) => a.score - b.score)[0];
+  const availableScores = scoreList.filter((item) => Number.isFinite(item.score));
+  const sortedLowestMetrics = [...availableScores].sort((a, b) => a.score - b.score);
+  let lowestMetric = sortedLowestMetrics[0];
+  let secondLowestMetric = sortedLowestMetrics[1];
+
+  const jumpOutputMetric = availableScores.find((item) => item.key === "cmjHeight");
+  const jumpEfficiencyMetric = availableScores.find((item) => item.key === "mRsi");
+  const jumpOutputAndEfficiencyAreClose = Number.isFinite(jumpOutputMetric?.score) && Number.isFinite(jumpEfficiencyMetric?.score) && Math.abs(jumpOutputMetric.score - jumpEfficiencyMetric.score) <= 5;
+  if (jumpOutputAndEfficiencyAreClose && lowestMetric?.key === "mRsi" && jumpOutputMetric.score <= lowestMetric.score + 5) {
+    lowestMetric = jumpOutputMetric;
+    secondLowestMetric = jumpEfficiencyMetric;
+  }
+
+  const sortedHighest = [...availableScores].sort((a, b) => b.score - a.score);
+  const highest = sortedHighest[0];
+  const secondHighest = sortedHighest[1];
+  const highestTestedMetric = sortedHighest.find((item) => item.key !== "codDeficit");
+  const mainScores = Object.values(scores).filter(Number.isFinite);
+  const majorLimiters = mainScores.filter((score) => score < 40).length;
+  const noScoreBelow60 = mainScores.length >= 5 && mainScores.every((score) => score >= 60);
+  const noScoreBelow40 = mainScores.every((score) => score >= 40);
+
+  const completeAthlete = Number.isFinite(overall) && overall >= 75 && athleticExpression >= 70 && power >= 70 && strength >= 70 && efficiency >= 70 && noScoreBelow60;
+  const developmental = Number.isFinite(overall) && (overall < 40 || scoredBucketItems.filter((item) => item.score < 35).length >= 2 || scoredBucketItems.filter((item) => item.score < 45).length >= 3 || majorLimiters >= 4);
+  const capacityLimited = strength < 50 && lowestBucket?.key === "strength";
+  const bestCapacity = Math.max(Number.isFinite(strength) ? strength : 0, Number.isFinite(power) ? power : 0);
+  const lowestExpression = Math.min(Number.isFinite(athleticExpression) ? athleticExpression : 100, Number.isFinite(efficiency) ? efficiency : 100);
+  const transferLimited = bestCapacity >= 65 && lowestExpression < 55 && bestCapacity - lowestExpression >= 10;
+
+  let archetype = "Profile Pending";
+  let status = "Incomplete Profile";
+  let summary = "Enter key testing numbers to generate an athlete profile.";
+  let trainingDirection = "Collect more data.";
+
+  if (mainScores.length >= 4 && Number.isFinite(overall)) {
+    if (completeAthlete) {
+      archetype = "Complete Athlete";
+      status = "Definitive Complete Athlete";
+      summary = "Elite across athletic expression, power, strength, and efficiency with no obvious primary limiter.";
+      trainingDirection = "Advance training based on sport demands while maintaining balance across the profile.";
+    } else if (developmental) {
+      archetype = "Developmental";
+      status = "Broad Development Priority";
+      summary = "Multiple buckets need development, requiring a broad training emphasis.";
+      trainingDirection = "Build the base across strength, athletic expression, power, and efficiency.";
+    } else if (capacityLimited) {
+      archetype = "Capacity-Limited";
+      status = "Strength-Limited";
+      summary = "Overall horsepower and capacity is limiting the ceiling of the rest of the profile.";
+      trainingDirection = "Prioritize strength capacity, force production, tissue capacity, and progressive power development.";
+    } else if (transferLimited) {
+      archetype = "Transfer-Limited";
+      status = "Transfer-Limited";
+      summary = "Capacity exists, but it is not showing up cleanly in athletic expression or efficiency.";
+      trainingDirection = "Bridge capacity to the court with sprinting, deceleration, CoD, rhythm, stiffness, and intent.";
+    } else {
+      archetype = "Foundational Profile";
+      const nearComplete = overall >= 68 && scoredBucketItems.length >= 4 && scoredBucketItems.every((item) => item.score >= 50) && scoredBucketItems.filter((item) => item.score >= 70).length >= 2 && noScoreBelow40;
+      status = nearComplete ? "Near Complete Athlete" : lowestBucket?.score < 50 ? lowestBucket.status : "Foundational Profile";
+      summary = "Solid foundational base, but needs to improve 1–2 categories to reach Complete Athlete status.";
+      trainingDirection = "Use the primary limiter to drive the next training block while maintaining the strongest qualities.";
+    }
+  }
+
+  const primaryLimiter = lowestMetric ? flagMap[lowestMetric.key] : "Need more data";
+  const secondaryLimiter = secondLowestMetric ? flagMap[secondLowestMetric.key] : "Need more data";
+  const rating = getProfileRating(overall, status);
+  const summaryStrength = highestTestedMetric ? summaryStrengthMap[highestTestedMetric.key] || highestTestedMetric.label.toLowerCase() : "strongest tested quality";
+
+  const profile = {
+    sex,
+    scores,
+    scoreList,
+    bucketItems,
+    overallScore: overall,
+    archetype,
+    status,
+    summary,
+    trainingDirection,
+    primaryLimiter,
+    secondaryLimiter,
+    greenFlagOne: highest ? highest.label : "Need more data",
+    greenFlagTwo: secondHighest ? secondHighest.label : "Need more data",
+    strongestQuality: highest?.label || "Need more data",
+    summaryStrength,
+    rating,
+    raw: {
+      bodyweight,
+      sprint10,
+      drill505,
+      codDeficit,
+      cmjHeight,
+      mRsi,
+      trapBarE1RM,
+      relativeStrength,
+    },
+  };
+
+  return { ...profile, trainingFocus: getTrainingFocus(profile) };
+}
+
+function getPossessivePronoun(sex) {
+  if (sex === "Female") return "her";
+  if (sex === "Male") return "his";
+  return "their";
+}
+
+function Field({ label, value, onChange, suffix, type = "text", required = false }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-bold text-slate-700">{label}{required ? <span className="text-rose-500"> *</span> : null}</span>
+      <div className="mt-2 flex overflow-hidden rounded-2xl border border-slate-200 bg-white focus-within:border-slate-500">
+        <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full bg-transparent px-4 py-3 text-slate-950 outline-none" />
+        {suffix ? <span className="flex items-center border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500">{suffix}</span> : null}
+      </div>
+    </label>
+  );
+}
+
+function SelectField({ label, value, onChange, children }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none focus:border-slate-500">
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function StarRating({ value }) {
+  const rating = Number.isFinite(value) ? value : 0;
+  return (
+    <div>
+      <div className="flex gap-0.5" aria-label={`${rating} out of 5 stars`}>
+        {[0, 1, 2, 3, 4].map((index) => {
+          const fillAmount = Math.max(0, Math.min(1, rating - index)) * 100;
+          return (
+            <span key={index} className="relative inline-block text-2xl leading-none text-slate-300">
+              ★
+              <span className="absolute left-0 top-0 overflow-hidden text-yellow-400" style={{ width: `${fillAmount}%` }}>★</span>
+            </span>
+          );
+        })}
+      </div>
+      <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-500">{Number.isFinite(value) ? value.toFixed(1) : "—"} / 5 Stars</p>
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, helper }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{value}</p>
+      <p className="mt-1 text-sm font-semibold text-slate-500">{helper}</p>
+    </div>
+  );
+}
+
+function ScoreBar({ score }) {
+  return (
+    <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+      <div className={`h-full rounded-full ${scoreColor(score)}`} style={{ width: Number.isFinite(score) ? `${Math.round(score)}%` : "0%" }} />
+    </div>
+  );
+}
+
+function LimiterPill({ value }) {
+  return <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700">{value}</span>;
+}
+
+function StatusPill({ value }) {
+  const tone = value.includes("Near") ? "bg-emerald-100 text-emerald-800" : value.includes("Limited") || value.includes("Broad") ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-700";
+  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${tone}`}>{value}</span>;
+}
+
+function MetricCard({ item }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-black text-slate-950">{item.label}</p>
+          <p className="text-sm text-slate-500">{item.display}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-lg font-black text-slate-950">{Number.isFinite(item.score) ? Math.round(item.score) : "—"}</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{scoreLabel(item.score)}</p>
+        </div>
+      </div>
+      <ScoreBar score={item.score} />
+    </div>
+  );
+}
+
+function BucketCard({ bucket }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-black uppercase tracking-wide text-slate-500">{bucket.label}</p>
+          <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">{Number.isFinite(bucket.score) ? bucket.score.toFixed(0) : "—"}</p>
+          <p className="mt-1 text-sm font-bold text-slate-500">{scoreLabel(bucket.score)}</p>
+        </div>
+        <div className="rounded-2xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">/100</div>
+      </div>
+      <ScoreBar score={bucket.score} />
+    </div>
+  );
+}
+
+function SnapshotCard({ profile }) {
+  return (
+    <div className="rounded-3xl bg-white/10 p-5 print:bg-slate-100">
+      <p className="text-xs font-black uppercase tracking-wide text-white/50 print:text-slate-500">Profile Snapshot</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="min-h-[132px] rounded-3xl bg-slate-900/40 p-5 print:bg-white print:border print:border-slate-200">
+          <p className="text-xs font-black uppercase tracking-wide text-white/50 print:text-slate-500">Athlete Archetype</p>
+          <span className="mt-3 inline-flex rounded-full bg-white px-4 py-2 text-sm font-black text-slate-950 shadow-sm">{profile.archetype}</span>
+        </div>
+        <div className="min-h-[132px] rounded-3xl bg-slate-900/40 p-5 print:bg-white print:border print:border-slate-200">
+          <p className="text-xs font-black uppercase tracking-wide text-white/50 print:text-slate-500">Profile Rating</p>
+          <div className="mt-4"><StarRating value={profile.rating} /></div>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-950"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Primary Limiter</p><p className="mt-1 font-black">{profile.primaryLimiter}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-950"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Secondary Limiter</p><p className="mt-1 font-black">{profile.secondaryLimiter}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-950"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-1 font-black">{profile.greenFlagOne}</p></div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-950"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-1 font-black">{profile.greenFlagTwo}</p></div>
+      </div>
+    </div>
+  );
+}
+
+function OnePageReport({ data, profile, onBack }) {
+  const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
+
+  return (
+    <main className="min-h-screen bg-white p-4 text-slate-950 print:p-0">
+      <style>{`
+        @page { size: letter landscape; margin: 0.25in; }
+        @media print {
+          html, body { background: #ffffff !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .no-print { display: none !important; }
+          .report-page { width: 10.5in; min-height: 7.95in; max-height: 7.95in; overflow: hidden; page-break-after: avoid; }
+        }
+      `}</style>
+
+      <div className="no-print mx-auto mb-4 flex max-w-7xl flex-wrap gap-3">
+        <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
+        <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
+      </div>
+
+      <section className="report-page mx-auto bg-white text-slate-950">
+        <div className="rounded-[1.6rem] bg-slate-950 p-4 text-white">
+          <div className="flex items-start justify-between gap-5">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/50">Athlete Performance Profile</p>
+              <h1 className="mt-2 text-4xl font-black tracking-tight">{data.name || "Athlete Name"}</h1>
+              <p className="mt-1 text-sm font-semibold text-white/60">{athleteMeta || "Enter athlete details"}</p>
+            </div>
+            <div className="rounded-2xl bg-white px-5 py-3 text-center text-slate-950 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Overall Score</p>
+              <p className="text-4xl font-black tracking-tight">{Number.isFinite(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-[0.95fr_1.05fr] gap-3">
+          <div className="space-y-3">
+            <div className="rounded-[1.5rem] bg-slate-950 p-4 text-white">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-white/50">Profile Snapshot</p>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                <div className="rounded-2xl bg-slate-900/50 p-3 text-white">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/50">Athlete Archetype</p>
+                  <p className="mt-2 text-base font-black leading-tight">{profile.archetype}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-900/50 p-3 text-white">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-white/50">Profile Rating</p>
+                  <div className="mt-2"><StarRating value={profile.rating} /></div>
+                </div>
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Primary Limiter</p><p className="mt-1 text-sm font-black">{profile.primaryLimiter}</p></div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Secondary Limiter</p><p className="mt-1 text-sm font-black">{profile.secondaryLimiter}</p></div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-1 text-sm font-black">{profile.greenFlagOne}</p></div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-slate-950"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Current Strength</p><p className="mt-1 text-sm font-black">{profile.greenFlagTwo}</p></div>
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Coach Summary</p>
+              <p className="mt-2 text-[13px] leading-6 text-slate-700">{data.name || "This athlete"} currently profiles as a <span className="font-black text-slate-950">{profile.archetype}</span>. The primary limiter is <span className="font-black text-slate-950">{profile.primaryLimiter}</span>, while {getPossessivePronoun(profile.sex)} <span className="font-black text-slate-950">{profile.summaryStrength}</span> is showing up as a current strength. {profile.trainingDirection}</p>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Training Focus</p>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] leading-5 text-slate-700">
+                <div className="rounded-2xl bg-slate-100 p-2.5"><span className="font-black text-slate-950">Primary:</span><br />{profile.trainingFocus.primary}</div>
+                <div className="rounded-2xl bg-slate-100 p-2.5"><span className="font-black text-slate-950">Secondary:</span><br />{profile.trainingFocus.secondary}</div>
+                <div className="rounded-2xl bg-slate-100 p-2.5"><span className="font-black text-slate-950">Maintain:</span><br />{profile.trainingFocus.maintain}</div>
+              </div>
+              <ul className="mt-2.5 list-disc space-y-1 pl-4 text-[11px] leading-5 text-slate-700">
+                {profile.trainingFocus.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}
+              </ul>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-end justify-between gap-3">
+                <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Category Scores</p><h2 className="text-xl font-black tracking-tight">Profile Buckets</h2></div>
+                <p className="text-[10px] font-bold text-slate-500">Each bucket contributes 25%.</p>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {profile.bucketItems.map((bucket) => <div key={bucket.key} className="rounded-2xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p><p className="mt-1 text-2xl font-black tracking-tight text-slate-950">{Number.isFinite(bucket.score) ? bucket.score.toFixed(0) : "—"}</p><ScoreBar score={bucket.score} /></div>)}
+              </div>
+            </div>
+            <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-end justify-between gap-3">
+                <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Tested Metrics</p><h2 className="text-xl font-black tracking-tight">Metric Snapshot</h2></div>
+                <StatusPill value={profile.status} />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {profile.scoreList.map((item) => <div key={item.key} className="rounded-2xl border border-slate-200 bg-white p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-black leading-tight text-slate-950">{item.label}</p><p className="mt-1 text-xs font-bold text-slate-500">{item.display}</p></div><p className="text-lg font-black text-slate-950">{Number.isFinite(item.score) ? Math.round(item.score) : "—"}</p></div><ScoreBar score={item.score} /></div>)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ScoringGuide({ onBack }) {
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
+          <button onClick={onBack} className="mb-4 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/20">← Back</button>
+          <h1 className="text-4xl font-black tracking-tight md:text-5xl">Scoring Guide</h1>
+          <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Current standards, score tiers, bucket definitions, and model logic.</p>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
+          {["Male", "Female"].map((sex) => (
+            <div key={sex} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <div className="bg-slate-950 px-5 py-4 text-white"><p className="text-lg font-black">{sex} Standards</p></div>
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-100 text-slate-500"><tr><th className="p-3 font-black">Metric</th><th className="p-3 font-black">0 Score</th><th className="p-3 font-black">100 Score</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {Object.entries(standards[sex]).map(([key, standard]) => <tr key={`${sex}-${key}`}><td className="p-3 font-bold">{standard.label}</td><td className="p-3">{standard.poor} {standard.unit}</td><td className="p-3">{standard.elite} {standard.unit}</td></tr>)}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-2">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-2xl font-black">Score Tiers</h2><div className="mt-4 space-y-3 text-sm leading-6 text-slate-700"><p><span className="font-black text-slate-950">Standout:</span> 80–100</p><p><span className="font-black text-slate-950">Strong:</span> 60–79</p><p><span className="font-black text-slate-950">Solid:</span> 40–59</p><p><span className="font-black text-slate-950">Needs Work:</span> 20–39</p><p><span className="font-black text-slate-950">Limiter:</span> 0–19</p></div></div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h2 className="text-2xl font-black">Scoring Structure</h2><div className="mt-4 space-y-3 text-sm leading-6 text-slate-700"><p><span className="font-black text-slate-950">Athletic Expression:</span> 10-yard sprint + 505.</p><p><span className="font-black text-slate-950">Power:</span> CMJ height.</p><p><span className="font-black text-slate-950">Strength:</span> trap bar relative strength.</p><p><span className="font-black text-slate-950">Efficiency:</span> mRSI + speed-adjusted COD Deficit.</p><p><span className="font-black text-slate-950">Overall:</span> average of the four buckets.</p></div></div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function DashboardReport({ data, profile, onSave, onBack, onPrintReport }) {
+  const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
+  return (
+    <section className="space-y-6">
+      <div className="overflow-hidden rounded-[2rem] bg-slate-950 text-white shadow-sm">
+        <div className="grid gap-6 p-6 md:p-8 lg:grid-cols-[1.05fr_0.95fr]">
+          <div>
+            <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/60">Athlete Performance Profile</div>
+            <h2 className="mt-4 text-4xl font-black tracking-tight md:text-5xl">{data.name || "Athlete Name"}</h2>
+            <p className="mt-2 text-sm font-semibold text-white/60">{athleteMeta || "Enter athlete details"}</p>
+            <div className="mt-6 rounded-3xl bg-white p-6 text-slate-950 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">Primary Archetype</p>
+                  <p className="mt-2 text-3xl font-black tracking-tight">{profile.archetype}</p>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">{profile.summary}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-950 px-5 py-4 text-center text-white">
+                  <p className="text-xs font-black uppercase tracking-wide text-white/50">Overall</p>
+                  <p className="mt-1 text-3xl font-black">{Number.isFinite(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <SnapshotCard profile={profile} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {profile.bucketItems.map((bucket) => <BucketCard key={bucket.key} bucket={bucket} />)}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr]">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div><p className="text-sm font-black uppercase tracking-wide text-slate-500">Tested Metrics</p><h3 className="text-2xl font-black">Metric Snapshot</h3></div>
+            <StatusPill value={profile.status} />
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {profile.scoreList.map((item) => <MetricCard key={item.key} item={item} />)}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Coach Summary</p>
+            <p className="mt-3 text-base leading-8 text-slate-700">{data.name || "This athlete"} currently profiles as a <span className="font-black text-slate-950">{profile.archetype}</span>. The primary limiter is <span className="font-black text-slate-950">{profile.primaryLimiter}</span>, while {getPossessivePronoun(profile.sex)} <span className="font-black text-slate-950">{profile.summaryStrength}</span> is showing up as a current strength. {profile.trainingDirection}</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Training Focus</p>
+            <div className="mt-4 grid gap-3 text-sm leading-6 text-slate-700">
+              <div className="rounded-2xl bg-slate-100 p-4"><span className="font-black text-slate-950">Primary:</span> {profile.trainingFocus.primary}</div>
+              <div className="rounded-2xl bg-slate-100 p-4"><span className="font-black text-slate-950">Secondary:</span> {profile.trainingFocus.secondary}</div>
+              <div className="rounded-2xl bg-slate-100 p-4"><span className="font-black text-slate-950">Maintain:</span> {profile.trainingFocus.maintain}</div>
+            </div>
+            <ul className="mt-5 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-700">
+              {profile.trainingFocus.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
+        <button onClick={onPrintReport} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Print Report / PDF</button>
+        <button onClick={onSave} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Save Report</button>
+      </div>
+    </section>
+  );
+}
+
+function ReportBuilder({ data, setData, onSave, onBack, onPrintReport }) {
+  const profile = useMemo(() => buildProfile(data), [data]);
+  const update = (key, value) => setData((previous) => ({ ...previous, [key]: value }));
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Run New Report</div>
+              <h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">Athlete Performance Profile</h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Enter athlete data, review the dashboard, print the report, or save it to the athlete library.</p>
+            </div>
+            <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
+          </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-2xl font-black">Athlete Info</h2>
+            <div className="mt-6 grid gap-4">
+              <Field label="Athlete Name" value={data.name} onChange={(value) => update("name", value)} required />
+              <SelectField label="Sex" value={data.sex} onChange={(value) => update("sex", value)}><option>Male</option><option>Female</option></SelectField>
+              <div className="grid gap-4 sm:grid-cols-2"><Field label="Testing Date" type="date" value={data.date} onChange={(value) => update("date", value)} /><Field label="Date of Birth" type="date" value={data.dob} onChange={(value) => update("dob", value)} /></div>
+              <div className="grid gap-4 sm:grid-cols-2"><Field label="Sport" value={data.sport} onChange={(value) => update("sport", value)} /><Field label="Position" value={data.position} onChange={(value) => update("position", value)} /></div>
+              <div className="grid gap-4 sm:grid-cols-2"><Field label="Height" value={data.height} onChange={(value) => update("height", value)} suffix="in" /><Field label="Body Weight" value={data.bodyweight} onChange={(value) => update("bodyweight", value)} suffix="lb" required /></div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-2xl font-black">Testing Inputs</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">COD Deficit and relative strength are calculated automatically.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <Field label="10-Yard Sprint" value={data.sprint10} onChange={(value) => update("sprint10", value)} suffix="sec" />
+              <Field label="505 Drill" value={data.drill505} onChange={(value) => update("drill505", value)} suffix="sec" />
+              <Field label="CMJ Height" value={data.cmjHeight} onChange={(value) => update("cmjHeight", value)} suffix="in" />
+              <Field label="mRSI" value={data.mRsi} onChange={(value) => update("mRsi", value)} />
+              <Field label="Trap Bar e1RM" value={data.trapBarE1RM} onChange={(value) => update("trapBarE1RM", value)} suffix="lb" />
+            </div>
+            <div className="mt-6 rounded-2xl bg-slate-100 p-4 text-sm leading-6 text-slate-600"><span className="font-black text-slate-950">Auto-calculated:</span> COD Deficit = {Number.isFinite(profile.raw.codDeficit) ? `${profile.raw.codDeficit.toFixed(2)} sec` : "missing"}; Relative strength = {Number.isFinite(profile.raw.relativeStrength) ? `${profile.raw.relativeStrength.toFixed(2)} xBW` : "missing"}.</div>
+          </div>
+        </section>
+
+        <DashboardReport data={data} profile={profile} onSave={() => onSave(data, profile)} onBack={onBack} onPrintReport={() => onPrintReport(data, profile)} />
+      </div>
+    </main>
+  );
+}
+
+function buildSavedReport(data, profile) {
+  return {
+    id: `${slugify(data.name)}-${data.date || new Date().toISOString().slice(0, 10)}-${Date.now()}`,
+    date: data.date || new Date().toISOString().slice(0, 10),
+    data: { ...data },
+    profile,
+    archetype: profile.archetype,
+    status: profile.status,
+    primaryLimiter: profile.primaryLimiter,
+    secondaryLimiter: profile.secondaryLimiter,
+    rating: profile.rating,
+    overall: profile.overallScore,
+  };
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"') inQuotes = !inQuotes;
+    else if (char === "," && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else current += char;
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim());
+  return lines.slice(1).map((line, rowIndex) => {
+    const values = parseCsvLine(line);
+    const row = { id: `row-${rowIndex + 1}` };
+    headers.forEach((header, index) => { row[header] = values[index] || ""; });
+    return row;
+  });
+}
+
+function validateImportRow(row) {
+  if (!row.name) return "Missing Required Info";
+  if (!row.sex || !["Male", "Female"].includes(row.sex)) return "Invalid Sex";
+  if (!row.bodyweight) return "Missing Bodyweight";
+  return "Complete";
+}
+
+function csvRowToAthlete(row) {
+  return { ...blankAthlete, ...row, sport: row.sport || "Basketball", date: row.date || new Date().toISOString().slice(0, 10) };
+}
+
+function CsvImport({ onBack, onView, onSaveRows }) {
+  const [csvText, setCsvText] = useState(templateHeaders.join(",") + "\n");
+  const rows = useMemo(() => parseCsv(csvText), [csvText]);
+  const reviewedRows = useMemo(() => rows.map((row) => {
+    const data = csvRowToAthlete(row);
+    const profile = buildProfile(data);
+    return { row, data, profile, upload: validateImportRow(row) };
+  }), [rows]);
+
+  const completeRows = reviewedRows.filter((item) => item.upload === "Complete");
+
+  function downloadTemplate() {
+    const example = `${templateHeaders.join(",")}\nZac Owens,Male,2026-05-10,,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
+    const blob = new Blob([example], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "athlete-profile-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setCsvText(String(reader.result || ""));
+    reader.readAsText(file);
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">CSV Import</div>
+              <h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">Import Athlete Reports</h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Use the template CSV to import one or multiple athletes into your private workspace.</p>
+            </div>
+            <div className="flex flex-wrap gap-3"><button onClick={downloadTemplate} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Download Template</button><button onClick={onBack} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Back</button></div>
+          </div>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-2xl font-black">Upload or Paste CSV</h2>
+            <input type="file" accept=".csv,text/csv" onChange={handleFile} className="mt-5 block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700" />
+            <textarea value={csvText} onChange={(event) => setCsvText(event.target.value)} className="mt-5 h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs outline-none focus:border-slate-500" />
+            <div className="mt-5 flex flex-wrap gap-3"><button onClick={() => onSaveRows(completeRows)} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Save All Complete</button><p className="flex items-center text-sm font-bold text-slate-500">{completeRows.length} complete row(s)</p></div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Import Review</p>
+            <h2 className="text-2xl font-black">Athlete Rows</h2>
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+              <div className="hidden grid-cols-[1fr_0.8fr_1fr_1fr_0.7fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Upload</div><div>Profile</div><div>Limiter</div><div>Rating</div><div>Actions</div></div>
+              <div className="divide-y divide-slate-100">
+                {reviewedRows.map((item) => (
+                  <div key={item.row.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1fr_0.8fr_1fr_1fr_0.7fr_1fr] lg:items-center">
+                    <div><p className="font-black text-slate-950">{item.data.name || "Missing Name"}</p><p className="text-xs font-semibold text-slate-500">{item.data.sex} · {item.data.date}</p></div>
+                    <div><span className={`rounded-full px-3 py-1 text-xs font-black ${item.upload === "Complete" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{item.upload}</span></div>
+                    <div className="text-sm font-black text-slate-800">{item.profile.archetype}</div>
+                    <div><LimiterPill value={item.profile.primaryLimiter} /></div>
+                    <div><span className="text-sm font-black text-slate-700">{Number.isFinite(item.profile.rating) ? item.profile.rating.toFixed(1) : "—"}</span></div>
+                    <div className="flex flex-wrap gap-2"><button onClick={() => onView(item.data)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">View</button><button onClick={() => onSaveRows([item])} disabled={item.upload !== "Complete"} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Save</button></div>
+                  </div>
+                ))}
+                {reviewedRows.length === 0 && <div className="p-10 text-center"><p className="text-lg font-black text-slate-950">No rows found.</p><p className="text-sm text-slate-500">Paste CSV data or upload a CSV file.</p></div>}
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function AthleteProfile({ athlete, onBack, onOpenReport }) {
+  const latest = athlete.reports[0];
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
+          <button onClick={onBack} className="mb-4 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/20">← Back to Athlete Library</button>
+          <h1 className="text-4xl font-black tracking-tight md:text-5xl">{athlete.name}</h1>
+          <p className="mt-2 text-sm font-semibold text-white/60">{athlete.sex} · {athlete.sport} · {athlete.position}</p>
+        </section>
+        <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={Number.isFinite(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={Number.isFinite(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{report.archetype} · {report.status}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
+      </div>
+    </main>
+  );
+}
+
+function AuthCard({ onCreateCoach }) {
+  const [form, setForm] = useState({ name: "", email: "", organization: "" });
+  function update(key, value) { setForm((current) => ({ ...current, [key]: value })); }
+  function submit() {
+    if (!form.name.trim() || !form.email.trim() || !form.organization.trim()) return;
+    onCreateCoach({ id: slugify(`${form.name}-${form.organization}`), ...form, athletes: [] });
+  }
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl items-center gap-8 lg:grid-cols-[1fr_0.9fr]">
+        <section className="rounded-[2rem] bg-slate-950 p-8 text-white shadow-sm md:p-10"><div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Athlete Profiling MVP</div><h1 className="mt-5 text-4xl font-black tracking-tight md:text-6xl">Private athlete reporting for every coach.</h1><p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Create a coach workspace, run athlete reports, save report history, and import athletes from the CSV template.</p></section>
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Create Coach Workspace</p><h2 className="mt-2 text-3xl font-black tracking-tight">Set up your private library</h2><div className="mt-6 space-y-4"><Field label="Coach Name" value={form.name} onChange={(value) => update("name", value)} /><Field label="Email" value={form.email} onChange={(value) => update("email", value)} /><Field label="Organization" value={form.organization} onChange={(value) => update("organization", value)} /><button onClick={submit} className="w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white hover:bg-slate-800">Create Private Workspace</button></div></section>
+      </div>
+    </main>
+  );
+}
+
+function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, onGuide, onPrintReport }) {
+  const totalReports = coach.athletes.reduce((sum, athlete) => sum + athlete.reports.length, 0);
+  const latestReports = coach.athletes.map((athlete) => athlete.reports[0]).filter(Boolean);
+  const avgRating = latestReports.length ? latestReports.reduce((sum, report) => sum + (report.rating || 0), 0) / latestReports.length : null;
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8"><div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"><div><div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</div><h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1><p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Private coach workspace. Reports saved here only appear in this account.</p></div><div className="flex flex-wrap gap-3"><button onClick={onGuide} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Scoring Guide</button><button onClick={onCsvImport} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Import CSV</button><button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button><button onClick={onLogout} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Log Out</button></div></div></section>
+        <section className="grid gap-4 md:grid-cols-5"><SummaryCard label="Athletes" value={coach.athletes.length} helper="Private profiles" /><SummaryCard label="All Reports" value={totalReports} helper="Saved testing dates" /><SummaryCard label="Recent Reports" value={latestReports.length} helper="Current snapshots" /><SummaryCard label="Avg Rating" value={avgRating ? avgRating.toFixed(1) : "—"} helper="Latest reports only" /><button onClick={onRunReport} className="rounded-3xl bg-slate-950 p-5 text-left text-white shadow-sm hover:bg-slate-800"><p className="text-xs font-black uppercase tracking-wide text-white/50">New Report</p><p className="mt-2 text-2xl font-black tracking-tight">Run Report</p><p className="mt-1 text-sm font-semibold text-white/60">Start a fresh athlete profile</p></button></section>
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between"><div><p className="text-sm font-black uppercase tracking-wide text-slate-500">Athlete Library</p><h2 className="text-2xl font-black tracking-tight">Profiles</h2></div><p className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-800">Account Data Is Isolated</p></div>{coach.athletes.length === 0 ? <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No athletes yet.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a CSV to start building your athlete library.</p><div className="mt-6 flex flex-wrap justify-center gap-3"><button onClick={onRunReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100">Import CSV</button></div></div> : <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200"><div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div></div><div className="divide-y divide-slate-100">{coach.athletes.map((athlete) => { const latest = athlete.reports[0]; return <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center"><div><p className="font-black text-slate-950">{athlete.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{athlete.sex} · {athlete.sport} · {athlete.position} · {athlete.reports.length} reports</p></div><div className="text-sm font-black text-slate-800">{latest.archetype}</div><div><StatusPill value={latest.status} /></div><div><LimiterPill value={latest.primaryLimiter} /></div><div><StarRating value={latest.rating} /></div><div className="flex flex-wrap gap-2"><button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button><button onClick={() => onPrintReport(latest.data, latest.profile)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Print Latest</button></div></div>; })}</div></div>}</section>
+      </div>
+    </main>
+  );
+}
+
+export default function AthleteProfilingMVP() {
+  const [coach, setCoach] = useState(null);
+  const [view, setView] = useState("auth");
+  const [builderData, setBuilderData] = useState(blankAthlete);
+  const [selectedAthleteId, setSelectedAthleteId] = useState(null);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [printData, setPrintData] = useState(null);
+  const [printProfile, setPrintProfile] = useState(null);
+
+  function openPrintReport(data, profile) {
+    setPrintData(data);
+    setPrintProfile(profile);
+    setView("print");
+  }
+
+  function saveReport(data, profile) {
+    if (!coach || !data.name.trim()) {
+      alert("Add an athlete name before saving this report.");
+      return;
+    }
+    const report = buildSavedReport(data, profile);
+    const athleteId = slugify(data.name);
+    const athleteBase = { id: athleteId, name: data.name, sex: data.sex, sport: data.sport, position: data.position, height: data.height, bodyweight: data.bodyweight, reports: [] };
+    setCoach((current) => {
+      const exists = current.athletes.some((athlete) => athlete.id === athleteId);
+      const athletes = exists
+        ? current.athletes.map((athlete) => athlete.id === athleteId ? { ...athlete, ...athleteBase, reports: [report, ...athlete.reports].sort((a, b) => b.date.localeCompare(a.date)) } : athlete)
+        : [{ ...athleteBase, reports: [report] }, ...current.athletes];
+      return { ...current, athletes };
+    });
+    setView("workspace");
+    window.setTimeout(() => alert("Report saved to Athlete Library."), 100);
+  }
+
+  function saveImportedRows(items) {
+    items.forEach((item) => saveReport(item.data, item.profile));
+    setView("workspace");
+  }
+
+  if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); setView("workspace"); }} />;
+  if (view === "guide") return <ScoringGuide onBack={() => setView("workspace")} />;
+  if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={() => setView("workspace")} />;
+  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => setView("workspace")} onPrintReport={openPrintReport} />;
+  if (view === "csv") return <CsvImport onBack={() => setView("workspace")} onView={(data) => { setBuilderData(data); setView("builder"); }} onSaveRows={saveImportedRows} />;
+  if (view === "athlete") {
+    const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
+    if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setBuilderData(report.data); setSelectedReport(report); setView("builder"); }} />;
+  }
+  return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) }); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+}
