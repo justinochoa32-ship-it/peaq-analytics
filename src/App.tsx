@@ -298,6 +298,20 @@ function findAthleteMatch(athletes, data, preferredAthleteId) {
   return getAthleteMatchResult(athletes, data, preferredAthleteId).athlete;
 }
 
+function findExactNameDobAthlete(athletes, data, excludedAthleteId = null) {
+  const reportIdentity = getReportIdentity(data);
+  if (!reportIdentity.name || !reportIdentity.dob) return null;
+
+  const matches = athletes.filter((athlete) => {
+    const athleteIdentity = getAthleteIdentity(athlete);
+    return athlete.id !== excludedAthleteId
+      && athleteIdentity.name === reportIdentity.name
+      && athleteIdentity.dob === reportIdentity.dob;
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
 function buildAthleteBase(data, athleteId, existingAthlete) {
   return {
     id: athleteId,
@@ -1340,16 +1354,49 @@ function addReportEntries(current, entries) {
   return { ...normalizedCoach, athletes };
 }
 
-function correctSavedReport(current, athleteId, reportId, data, profile) {
+function correctSavedReport(current, athleteId, reportId, data, profile, targetAthleteId = athleteId) {
   if (!current) return current;
   const normalizedCoach = normalizeCoachWorkspace(current);
+  const sourceAthlete = normalizedCoach.athletes.find((athlete) => athlete.id === athleteId);
+  const existingReport = sourceAthlete?.reports.find((report) => report.id === reportId);
+  if (!sourceAthlete || !existingReport) return normalizedCoach;
+
+  const correctedReport = buildCorrectedReport(existingReport, data, profile);
+
+  if (targetAthleteId && targetAthleteId !== athleteId) {
+    const targetAthlete = normalizedCoach.athletes.find((athlete) => athlete.id === targetAthleteId);
+    if (!targetAthlete) return normalizedCoach;
+
+    const targetAthleteBase = buildAthleteBase(data, targetAthlete.id, targetAthlete);
+    const athletes = [];
+    normalizedCoach.athletes.forEach((athlete) => {
+      if (athlete.id === athleteId) {
+        const remainingReports = athlete.reports.filter((report) => report.id !== reportId);
+        if (remainingReports.length > 0) {
+          athletes.push({ ...athlete, reports: remainingReports.sort((a, b) => b.date.localeCompare(a.date)) });
+        }
+        return;
+      }
+
+      if (athlete.id === targetAthleteId) {
+        athletes.push({
+          ...athlete,
+          ...targetAthleteBase,
+          reports: [correctedReport, ...athlete.reports].sort((a, b) => b.date.localeCompare(a.date)),
+        });
+        return;
+      }
+
+      athletes.push(athlete);
+    });
+
+    return { ...normalizedCoach, athletes };
+  }
+
   return {
     ...normalizedCoach,
     athletes: normalizedCoach.athletes.map((athlete) => {
       if (athlete.id !== athleteId) return athlete;
-      const existingReport = athlete.reports.find((report) => report.id === reportId);
-      if (!existingReport) return athlete;
-      const correctedReport = buildCorrectedReport(existingReport, data, profile);
       const athleteBase = buildAthleteBase(data, athlete.id, athlete);
       return {
         ...athlete,
@@ -1935,10 +1982,16 @@ export default function AthleteProfilingMVP() {
       return;
     }
     if (builderAthleteId && builderReportId) {
-      setCoach((current) => correctSavedReport(current, builderAthleteId, builderReportId, data, profile));
+      const matchingAthlete = findExactNameDobAthlete(coach.athletes, data, builderAthleteId);
+      const shouldMoveToMatch = matchingAthlete
+        ? window.confirm(`This correction now matches an existing athlete profile:\n\n${matchingAthlete.name}\n${getAthleteIdentityLine(matchingAthlete)}\n\nMove this corrected report to that existing profile?`)
+        : false;
+      const targetAthleteId = shouldMoveToMatch && matchingAthlete ? matchingAthlete.id : builderAthleteId;
+      setCoach((current) => correctSavedReport(current, builderAthleteId, builderReportId, data, profile, targetAthleteId));
+      setSelectedAthleteId(targetAthleteId);
       setBuilderReportId(null);
       setView("workspace");
-      window.setTimeout(() => alert("Correction saved. Previous version kept in the audit trail."), 100);
+      window.setTimeout(() => alert(shouldMoveToMatch ? "Correction saved and moved to the matching athlete profile. Previous version kept in the audit trail." : "Correction saved. Previous version kept in the audit trail."), 100);
       return;
     }
     const entry = buildReportEntry(data, profile, builderAthleteId);
