@@ -70,6 +70,12 @@ const templateHeaders = [
 
 const coachStorageKey = "peaq-analytics-coach-workspace";
 
+const brandAssets = {
+  wordmark: "/assets/brand/peaq-name.png",
+  wordmarkWhite: "/assets/brand/peaq-name-wht.png",
+  symbol: "/assets/brand/peaq-symbol.png",
+};
+
 const comparisonMetrics = [
   { key: "overall", label: "Overall Score", unit: "", direction: "higher", decimals: 0 },
   { key: "rating", label: "Profile Rating", unit: "stars", direction: "higher", decimals: 1 },
@@ -635,7 +641,7 @@ function Field({ label, value, onChange, suffix, type = "text", required = false
   return (
     <label className="block">
       <span className="text-sm font-bold text-slate-700">{label}{required ? <span className="text-rose-500"> *</span> : null}</span>
-      <div className="mt-2 flex overflow-hidden rounded-2xl border border-slate-200 bg-white focus-within:border-slate-500">
+      <div className="mt-2 flex overflow-hidden rounded-2xl border border-slate-200 bg-white focus-within:border-[#1e94d2]">
         <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full bg-transparent px-4 py-3 text-slate-950 outline-none" />
         {suffix ? <span className="flex items-center border-l border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500">{suffix}</span> : null}
       </div>
@@ -647,11 +653,19 @@ function SelectField({ label, value, onChange, children }) {
   return (
     <label className="block">
       <span className="text-sm font-bold text-slate-700">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none focus:border-slate-500">
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[#1e94d2]">
         {children}
       </select>
     </label>
   );
+}
+
+function BrandMark({ variant = "wordmark", tone = "dark", className = "" }) {
+  const isSymbol = variant === "symbol";
+  const src = isSymbol ? brandAssets.symbol : tone === "light" ? brandAssets.wordmarkWhite : brandAssets.wordmark;
+  const sizeClass = isSymbol ? "h-11 w-11" : "h-11 w-auto";
+
+  return <img src={src} alt="PEAQ Analytics" className={`${sizeClass} object-contain ${className}`} />;
 }
 
 function StarRating({ value }) {
@@ -1388,6 +1402,11 @@ function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) 
 
 function AuthCard({ onCreateCoach }) {
   const [form, setForm] = useState({ name: "", email: "", organization: "" });
+  const valueCards = [
+    { title: "Profile", copy: "Score speed, COD, jump, strength, and efficiency." },
+    { title: "Report", copy: "Generate clean one-page athlete reports." },
+    { title: "Track", copy: "Save report history and compare progress over time." },
+  ];
   function update(key, value) { setForm((current) => ({ ...current, [key]: value })); }
   function submit() {
     if (!form.name.trim() || !form.email.trim() || !form.organization.trim()) return;
@@ -1396,8 +1415,39 @@ function AuthCard({ onCreateCoach }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl items-center gap-8 lg:grid-cols-[1fr_0.9fr]">
-        <section className="rounded-[2rem] bg-slate-950 p-8 text-white shadow-sm md:p-10"><div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Athlete Profiling MVP</div><h1 className="mt-5 text-4xl font-black tracking-tight md:text-6xl">Private athlete reporting for every coach.</h1><p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Create a coach workspace, run athlete reports, save report history, and import athletes from the CSV template.</p></section>
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Create Coach Workspace</p><h2 className="mt-2 text-3xl font-black tracking-tight">Set up your private library</h2><div className="mt-6 space-y-4"><Field label="Coach Name" value={form.name} onChange={(value) => update("name", value)} /><Field label="Email" value={form.email} onChange={(value) => update("email", value)} /><Field label="Organization" value={form.organization} onChange={(value) => update("organization", value)} /><button onClick={submit} className="w-full rounded-2xl bg-slate-950 px-5 py-4 text-sm font-black text-white hover:bg-slate-800">Create Private Workspace</button></div></section>
+        <section className="relative overflow-hidden rounded-[2rem] bg-[#231f20] p-8 text-white shadow-sm md:p-10">
+          <div className="absolute inset-x-8 bottom-8 h-28 rounded-t-full border-x border-t border-[#40bfef]/25" aria-hidden="true" />
+          <div className="absolute bottom-8 right-8 h-28 w-px bg-[#40bfef]/20" aria-hidden="true" />
+          <div className="relative">
+            <div className="flex items-center gap-3">
+              <BrandMark variant="wordmark" tone="light" className="h-10 max-w-[180px]" />
+              <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/70">Analytics</span>
+            </div>
+            <p className="mt-8 text-xs font-black uppercase tracking-wide text-[#8ed5f5]">PEAQ Analytics</p>
+            <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight md:text-6xl">Turn testing data into coach-ready athlete reports.</h1>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Create your PEAQ workspace to build athlete profiles, save report history, import testing data, and generate clean performance reports.</p>
+            <div className="mt-8 grid gap-3 md:grid-cols-3">
+              {valueCards.map((card) => (
+                <div key={card.title} className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <p className="text-sm font-black text-white">{card.title}</p>
+                  <p className="mt-2 text-sm leading-6 text-white/60">{card.copy}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <BrandMark variant="symbol" className="h-12 w-12" />
+          <p className="mt-6 text-xs font-black uppercase tracking-wide text-[#1e94d2]">Create Your PEAQ Workspace</p>
+          <h2 className="mt-2 text-3xl font-black tracking-tight">Create Your PEAQ Workspace</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-500">Start by setting up your coach workspace. You can add athletes after your account is created.</p>
+          <div className="mt-6 space-y-4">
+            <Field label="Coach Name" value={form.name} onChange={(value) => update("name", value)} />
+            <Field label="Email" value={form.email} onChange={(value) => update("email", value)} />
+            <Field label="Organization" value={form.organization} onChange={(value) => update("organization", value)} />
+            <button onClick={submit} className="w-full rounded-2xl bg-[#1e94d2] px-5 py-4 text-sm font-black text-white hover:bg-[#167bb0]">Create Workspace</button>
+          </div>
+        </section>
       </div>
     </main>
   );
@@ -1459,8 +1509,25 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8"><div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"><div><div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</div><h1 className="mt-4 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1><p className="mt-3 max-w-2xl text-base leading-7 text-white/70">Private coach workspace. Reports saved here only appear in this account.</p></div><div className="flex flex-wrap gap-3"><button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Import CSV</button><button onClick={onGuide} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Scoring Guide</button><button onClick={onLogout} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Log Out</button></div></div></section>
-        <section className="grid gap-4 md:grid-cols-5"><SummaryCard label="Athletes" value={coach.athletes.length} helper="Private profiles" /><SummaryCard label="All Reports" value={totalReports} helper="Saved testing dates" /><SummaryCard label="Recent Reports" value={latestReports.length} helper="Current snapshots" /><SummaryCard label="Avg Rating" value={avgRating ? avgRating.toFixed(1) : "—"} helper="Latest reports only" /><button onClick={onRunReport} className="rounded-3xl bg-slate-950 p-5 text-left text-white shadow-sm hover:bg-slate-800"><p className="text-xs font-black uppercase tracking-wide text-white/50">New Report</p><p className="mt-2 text-2xl font-black tracking-tight">Run Report</p><p className="mt-1 text-sm font-semibold text-white/60">Start a fresh athlete profile</p></button></section>
+        <section className="rounded-[2rem] bg-[#231f20] p-6 text-white shadow-sm md:p-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
+                <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</span>
+              </div>
+              <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">PEAQ Analytics workspace for saved reports, athlete profiles, CSV imports, and progress tracking.</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
+              <button onClick={onCsvImport} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Import CSV</button>
+              <button onClick={onGuide} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Scoring Guide</button>
+              <button onClick={onLogout} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Log Out</button>
+            </div>
+          </div>
+        </section>
+        <section className="grid gap-4 md:grid-cols-5"><SummaryCard label="Athletes" value={coach.athletes.length} helper="Athlete profiles" /><SummaryCard label="All Reports" value={totalReports} helper="Saved testing dates" /><SummaryCard label="Recent Reports" value={latestReports.length} helper="Current snapshots" /><SummaryCard label="Avg Rating" value={avgRating ? avgRating.toFixed(1) : "—"} helper="Latest reports only" /><button onClick={onRunReport} className="rounded-3xl bg-[#1e94d2] p-5 text-left text-white shadow-sm hover:bg-[#167bb0]"><p className="text-xs font-black uppercase tracking-wide text-white/70">New Report</p><p className="mt-2 text-2xl font-black tracking-tight">Run Report</p><p className="mt-1 text-sm font-semibold text-white/75">Start a fresh athlete profile</p></button></section>
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div><p className="text-sm font-black uppercase tracking-wide text-slate-500">Athlete Library</p><h2 className="text-2xl font-black tracking-tight">Profiles</h2></div>
