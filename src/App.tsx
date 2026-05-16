@@ -109,7 +109,7 @@ function loadStoredCoach() {
     if (!storedCoach) return null;
 
     const parsedCoach = JSON.parse(storedCoach);
-    return parsedCoach && Array.isArray(parsedCoach.athletes) ? parsedCoach : null;
+    return parsedCoach && Array.isArray(parsedCoach.athletes) ? normalizeCoachWorkspace(parsedCoach) : null;
   } catch {
     return null;
   }
@@ -135,6 +135,140 @@ function slugify(value) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+function normalizeIdentity(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getAthleteDob(athlete) {
+  const reportWithDob = athlete?.reports?.find((report) => report?.data?.dob);
+  return String(athlete?.dob || reportWithDob?.data?.dob || "").trim();
+}
+
+function createUniqueAthleteIdFromParts(parts, usedIds) {
+  const base = `athlete-${slugify(parts.filter(Boolean).join("-")) || "profile"}`;
+  let id = base;
+  let count = 2;
+  while (usedIds.has(id)) {
+    id = `${base}-${count}`;
+    count += 1;
+  }
+  usedIds.add(id);
+  return id;
+}
+
+function createUniqueAthleteId(data, athletes) {
+  const usedIds = new Set(athletes.map((athlete) => athlete.id));
+  const dob = String(data.dob || "").trim();
+  const parts = dob ? [data.name, dob] : [data.name, data.sex, data.sport, data.position];
+  return createUniqueAthleteIdFromParts(parts, usedIds);
+}
+
+function normalizeAthleteProfile(athlete, index, usedIds) {
+  const reports = Array.isArray(athlete.reports) ? athlete.reports : [];
+  const latestData = reports[0]?.data || {};
+  const dob = getAthleteDob({ ...athlete, reports });
+  const hasStableId = athlete.id && String(athlete.id).startsWith("athlete-") && !usedIds.has(athlete.id);
+  const id = hasStableId
+    ? String(athlete.id)
+    : createUniqueAthleteIdFromParts(dob ? [athlete.name || latestData.name, dob] : [athlete.name || latestData.name, athlete.sex || latestData.sex, athlete.sport || latestData.sport, athlete.position || latestData.position, index + 1], usedIds);
+
+  if (hasStableId) usedIds.add(id);
+
+  return {
+    ...athlete,
+    id,
+    name: athlete.name || latestData.name || "Unnamed Athlete",
+    dob,
+    sex: athlete.sex || latestData.sex || "Male",
+    sport: athlete.sport || latestData.sport || "Basketball",
+    position: athlete.position || latestData.position || "",
+    height: athlete.height || latestData.height || "",
+    bodyweight: athlete.bodyweight || latestData.bodyweight || "",
+    reports,
+  };
+}
+
+function normalizeCoachWorkspace(coach) {
+  if (!coach || !Array.isArray(coach.athletes)) return coach;
+  const usedIds = new Set();
+  return { ...coach, athletes: coach.athletes.map((athlete, index) => normalizeAthleteProfile(athlete, index, usedIds)) };
+}
+
+function getAthleteIdentity(athlete) {
+  return {
+    name: normalizeIdentity(athlete?.name),
+    dob: normalizeIdentity(getAthleteDob(athlete)),
+    sex: normalizeIdentity(athlete?.sex),
+    sport: normalizeIdentity(athlete?.sport),
+    position: normalizeIdentity(athlete?.position),
+  };
+}
+
+function getReportIdentity(data) {
+  return {
+    name: normalizeIdentity(data?.name),
+    dob: normalizeIdentity(data?.dob),
+    sex: normalizeIdentity(data?.sex),
+    sport: normalizeIdentity(data?.sport),
+    position: normalizeIdentity(data?.position),
+  };
+}
+
+function findAthleteMatch(athletes, data, preferredAthleteId) {
+  if (preferredAthleteId) {
+    const preferredAthlete = athletes.find((athlete) => athlete.id === preferredAthleteId);
+    if (preferredAthlete) return preferredAthlete;
+  }
+
+  const reportIdentity = getReportIdentity(data);
+  if (!reportIdentity.name) return null;
+
+  if (reportIdentity.dob) {
+    const matches = athletes.filter((athlete) => {
+      const athleteIdentity = getAthleteIdentity(athlete);
+      return athleteIdentity.name === reportIdentity.name && athleteIdentity.dob === reportIdentity.dob;
+    });
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  if (!reportIdentity.sex || !reportIdentity.sport || !reportIdentity.position) return null;
+
+  const matches = athletes.filter((athlete) => {
+    const athleteIdentity = getAthleteIdentity(athlete);
+    return athleteIdentity.name === reportIdentity.name
+      && athleteIdentity.sex === reportIdentity.sex
+      && athleteIdentity.sport === reportIdentity.sport
+      && athleteIdentity.position === reportIdentity.position;
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function buildAthleteBase(data, athleteId, existingAthlete) {
+  return {
+    id: athleteId,
+    name: data.name || existingAthlete?.name || "Unnamed Athlete",
+    dob: data.dob || getAthleteDob(existingAthlete),
+    sex: data.sex || existingAthlete?.sex || "Male",
+    sport: data.sport || existingAthlete?.sport || "Basketball",
+    position: data.position || existingAthlete?.position || "",
+    height: data.height || existingAthlete?.height || "",
+    bodyweight: data.bodyweight || existingAthlete?.bodyweight || "",
+    reports: [],
+  };
+}
+
+function getAthleteIdentityLine(athlete) {
+  const dob = getAthleteDob(athlete);
+  const reportCount = athlete.reports?.length || 0;
+  return [
+    dob ? `DOB: ${dob}` : null,
+    athlete.sex,
+    athlete.sport,
+    athlete.position,
+    `${reportCount} ${reportCount === 1 ? "report" : "reports"}`,
+  ].filter(Boolean).join(" · ");
 }
 
 function toNumber(value) {
@@ -852,27 +986,28 @@ function buildSavedReport(data, profile) {
   };
 }
 
-function buildReportEntry(data, profile) {
-  const report = buildSavedReport(data, profile);
-  const athleteId = slugify(data.name);
-  const athleteBase = { id: athleteId, name: data.name, sex: data.sex, sport: data.sport, position: data.position, height: data.height, bodyweight: data.bodyweight, reports: [] };
-  return { athleteId, athleteBase, report };
+function buildReportEntry(data, profile, preferredAthleteId = null) {
+  return { data, profile, preferredAthleteId };
 }
 
 function addReportEntries(current, entries) {
   if (!current) return current;
-  let athletes = current.athletes;
-  entries.forEach(({ athleteId, athleteBase, report }) => {
-    const exists = athletes.some((athlete) => athlete.id === athleteId);
-    athletes = exists
+  const normalizedCoach = normalizeCoachWorkspace(current);
+  let athletes = normalizedCoach.athletes;
+  entries.forEach(({ data, profile, preferredAthleteId }) => {
+    const report = buildSavedReport(data, profile);
+    const existingAthlete = findAthleteMatch(athletes, data, preferredAthleteId);
+    const athleteId = existingAthlete?.id || createUniqueAthleteId(data, athletes);
+    const athleteBase = buildAthleteBase(data, athleteId, existingAthlete);
+    athletes = existingAthlete
       ? athletes.map((athlete) => athlete.id === athleteId ? { ...athlete, ...athleteBase, reports: [report, ...athlete.reports].sort((a, b) => b.date.localeCompare(a.date)) } : athlete)
       : [{ ...athleteBase, reports: [report] }, ...athletes];
   });
-  return { ...current, athletes };
+  return { ...normalizedCoach, athletes };
 }
 
 function getLatestReport(athlete) {
-  return athlete.reports[0];
+  return athlete.reports?.[0];
 }
 
 function getReportBucketScore(report, key) {
@@ -982,7 +1117,7 @@ function CsvImport({ onBack, onView, onSaveRows }) {
   const completeRows = reviewedRows.filter((item) => item.upload === "Complete");
 
   function downloadTemplate() {
-    const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
+    const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,2008-04-15,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
     const blob = new Blob([example], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1117,7 +1252,7 @@ function AthleteProfile({ athlete, onBack, onOpenReport }) {
         <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-sm md:p-8">
           <button onClick={onBack} className="mb-4 rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/20">← Back to Athlete Library</button>
           <h1 className="text-4xl font-black tracking-tight md:text-5xl">{athlete.name}</h1>
-          <p className="mt-2 text-sm font-semibold text-white/60">{athlete.sex} · {athlete.sport} · {athlete.position}</p>
+          <p className="mt-2 text-sm font-semibold text-white/60">{getAthleteIdentityLine(athlete)}</p>
         </section>
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={Number.isFinite(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={Number.isFinite(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
         <ReportComparison reports={athlete.reports} />
@@ -1233,7 +1368,7 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
             </div>
           ) : null}
 
-          {coach.athletes.length === 0 ? <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No athletes yet.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a CSV to start building your athlete library.</p><div className="mt-6 flex flex-wrap justify-center gap-3"><button onClick={onRunReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100">Import CSV</button></div></div> : filteredAthletes.length === 0 ? <div className="mt-5 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No matches found.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Adjust the search or filters to show more athletes.</p></div> : <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200"><div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div></div><div className="divide-y divide-slate-100">{filteredAthletes.map((athlete) => { const latest = getLatestReport(athlete); return <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center"><div><p className="font-black text-slate-950">{athlete.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{athlete.sex} · {athlete.sport} · {athlete.position} · {athlete.reports.length} reports</p></div><div className="text-sm font-black text-slate-800">{latest.archetype}</div><div><StatusPill value={latest.status} /></div><div><LimiterPill value={latest.primaryLimiter} /></div><div><StarRating value={latest.rating} /></div><div className="flex flex-wrap gap-2"><button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button><button onClick={() => onPrintReport(latest.data, latest.profile)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Print Latest</button></div></div>; })}</div></div>}
+          {coach.athletes.length === 0 ? <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No athletes yet.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a CSV to start building your athlete library.</p><div className="mt-6 flex flex-wrap justify-center gap-3"><button onClick={onRunReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100">Import CSV</button></div></div> : filteredAthletes.length === 0 ? <div className="mt-5 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No matches found.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Adjust the search or filters to show more athletes.</p></div> : <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200"><div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div></div><div className="divide-y divide-slate-100">{filteredAthletes.map((athlete) => { const latest = getLatestReport(athlete); return <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center"><div><p className="font-black text-slate-950">{athlete.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{getAthleteIdentityLine(athlete)}</p></div><div className="text-sm font-black text-slate-800">{latest.archetype}</div><div><StatusPill value={latest.status} /></div><div><LimiterPill value={latest.primaryLimiter} /></div><div><StarRating value={latest.rating} /></div><div className="flex flex-wrap gap-2"><button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button><button onClick={() => onPrintReport(latest.data, latest.profile)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Print Latest</button></div></div>; })}</div></div>}
         </section>
       </div>
     </main>
@@ -1244,6 +1379,7 @@ export default function AthleteProfilingMVP() {
   const [coach, setCoach] = useState(loadStoredCoach);
   const [view, setView] = useState("auth");
   const [builderData, setBuilderData] = useState(blankAthlete);
+  const [builderAthleteId, setBuilderAthleteId] = useState(null);
   const [selectedAthleteId, setSelectedAthleteId] = useState(null);
   const [printData, setPrintData] = useState(null);
   const [printProfile, setPrintProfile] = useState(null);
@@ -1263,7 +1399,7 @@ export default function AthleteProfilingMVP() {
       alert("Add an athlete name before saving this report.");
       return;
     }
-    const entry = buildReportEntry(data, profile);
+    const entry = buildReportEntry(data, profile, builderAthleteId);
     setCoach((current) => addReportEntries(current, [entry]));
     setView("workspace");
     window.setTimeout(() => alert("Report saved to Athlete Library."), 100);
@@ -1282,11 +1418,11 @@ export default function AthleteProfilingMVP() {
   if (view === "guide") return <ScoringGuide onBack={() => setView("workspace")} />;
   if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={() => setView("workspace")} />;
   if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => setView("workspace")} onPrintReport={openPrintReport} />;
-  if (view === "csv") return <CsvImport onBack={() => setView("workspace")} onView={(data) => { setBuilderData(data); setView("builder"); }} onSaveRows={saveImportedRows} />;
+  if (view === "csv") return <CsvImport onBack={() => setView("workspace")} onView={(data) => { setBuilderAthleteId(null); setBuilderData(data); setView("builder"); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
-    if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
-    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setBuilderData(report.data); setView("builder"); }} />;
+    if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setBuilderAthleteId(athlete.id); setBuilderData(report.data); setView("builder"); }} />;
   }
-  return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) }); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+  return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) }); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
 }
