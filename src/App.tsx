@@ -1512,6 +1512,17 @@ function parseCsv(text) {
   });
 }
 
+function escapeCsvValue(value) {
+  const text = String(value ?? "");
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function rowsToCsvText(rows) {
+  const headerRow = templateHeaders.join(",");
+  const dataRows = rows.map((row) => templateHeaders.map((header) => escapeCsvValue(row[header])).join(","));
+  return [headerRow, ...dataRows].join("\n");
+}
+
 function validateImportRow(row) {
   if (!row.name) return "Missing Required Info";
   if (!row.sex || !["Male", "Female"].includes(row.sex)) return "Invalid Sex";
@@ -1563,6 +1574,11 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
   const readyRows = reviewedRows.filter((item) => item.canSave);
   const needsReviewCount = reviewedRows.filter((item) => item.review.status === "Needs Review").length;
 
+  function updateRowField(rowId, field, value) {
+    const updatedRows = rows.map((row) => row.id === rowId ? { ...row, [field]: value } : row);
+    setCsvText(rowsToCsvText(updatedRows));
+  }
+
   function downloadTemplate() {
     const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,2008-04-15,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
     const blob = new Blob([example], { type: "text/csv" });
@@ -1612,6 +1628,28 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
                     <div><LimiterPill value={item.profile.primaryLimiter} /></div>
                     <div><span className="text-sm font-black text-slate-700">{Number.isFinite(item.profile.rating) ? item.profile.rating.toFixed(1) : "—"}</span></div>
                     <div className="flex flex-wrap gap-2"><button onClick={() => onView(item.data)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">View</button><button onClick={() => onSaveRows([item])} disabled={!item.canSave} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Save</button></div>
+                    {!item.canSave ? (
+                      <div className="rounded-2xl bg-slate-50 p-4 lg:col-span-6">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-sm font-black text-slate-950">Fix this row</p>
+                          <p className="text-xs font-semibold text-slate-500">Edits update the CSV text and re-check automatically.</p>
+                        </div>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                          <CsvQuickFixField label="Name" value={item.row.name} onChange={(value) => updateRowField(item.row.id, "name", value)} />
+                          <CsvQuickFixSelect label="Sex" value={item.row.sex} onChange={(value) => updateRowField(item.row.id, "sex", value)}>
+                            <option value="">Select sex</option>
+                            <option>Male</option>
+                            <option>Female</option>
+                          </CsvQuickFixSelect>
+                          <CsvQuickFixField label="Test Date" type="date" value={item.row.date} onChange={(value) => updateRowField(item.row.id, "date", value)} />
+                          <CsvQuickFixField label="DOB" type="date" value={item.row.dob} onChange={(value) => updateRowField(item.row.id, "dob", value)} />
+                          <CsvQuickFixField label="Sport" value={item.row.sport} onChange={(value) => updateRowField(item.row.id, "sport", value)} />
+                          <CsvQuickFixField label="Position" value={item.row.position} onChange={(value) => updateRowField(item.row.id, "position", value)} />
+                          <CsvQuickFixField label="Height" value={item.row.height} onChange={(value) => updateRowField(item.row.id, "height", value)} />
+                          <CsvQuickFixField label="Body Weight" value={item.row.bodyweight} onChange={(value) => updateRowField(item.row.id, "bodyweight", value)} />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
                 {reviewedRows.length === 0 && <div className="p-10 text-center"><p className="text-lg font-black text-slate-950">No rows found.</p><p className="text-sm text-slate-500">Paste CSV data or upload a CSV file.</p></div>}
@@ -1621,6 +1659,26 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
         </section>
       </div>
     </main>
+  );
+}
+
+function CsvQuickFixField({ label, value, onChange, type = "text" }) {
+  return (
+    <label className="block">
+      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</span>
+      <input type={type} value={value || ""} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-[#1e94d2]" />
+    </label>
+  );
+}
+
+function CsvQuickFixSelect({ label, value, onChange, children }) {
+  return (
+    <label className="block">
+      <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</span>
+      <select value={value || ""} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-[#1e94d2]">
+        {children}
+      </select>
+    </label>
   );
 }
 

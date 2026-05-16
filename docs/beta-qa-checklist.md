@@ -81,6 +81,8 @@ Run this checklist before merging beta-facing changes or inviting coaches to tes
 - Import same-name athletes with different DOBs and confirm separate profiles.
 - Import a row matching an existing athlete by name + DOB and confirm it attaches to the existing profile.
 - Import ambiguous same-name rows with missing DOB and confirm they show Needs Review.
+- Fix a Needs Review row from the inline row editor and confirm it re-checks automatically.
+- Save the fixed row once it changes to Ready.
 
 ## Reports And PDFs
 
@@ -106,4 +108,3 @@ Run this checklist before merging beta-facing changes or inviting coaches to tes
 - Confirm GitHub Actions build passes.
 - Confirm no scoring model, scoring standards, archetype logic, or CSV template columns changed unless the task explicitly required it.
 - Merge only after the app passes the relevant checklist sections.
-
