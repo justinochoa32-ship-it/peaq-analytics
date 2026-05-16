@@ -1403,8 +1403,8 @@ function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) 
 function AuthCard({ onCreateCoach }) {
   const [form, setForm] = useState({ name: "", email: "", organization: "" });
   const valueCards = [
-    { title: "Profile", copy: "Score speed, COD, jump, strength, and efficiency." },
-    { title: "Report", copy: "Generate clean one-page athlete reports." },
+    { title: "Import", copy: "Enter testing data manually or upload it from CSV." },
+    { title: "Profile", copy: "Archetype athletes from speed, COD, jump, strength, and efficiency." },
     { title: "Track", copy: "Save report history and compare progress over time." },
   ];
   function update(key, value) { setForm((current) => ({ ...current, [key]: value })); }
@@ -1416,19 +1416,16 @@ function AuthCard({ onCreateCoach }) {
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl items-center gap-8 lg:grid-cols-[1fr_0.9fr]">
         <section className="relative overflow-hidden rounded-[2rem] bg-[#231f20] p-8 text-white shadow-sm md:p-10">
-          <div className="absolute inset-x-8 bottom-8 h-28 rounded-t-full border-x border-t border-[#40bfef]/25" aria-hidden="true" />
-          <div className="absolute bottom-8 right-8 h-28 w-px bg-[#40bfef]/20" aria-hidden="true" />
           <div className="relative">
             <div className="flex items-center gap-3">
               <BrandMark variant="wordmark" tone="light" className="h-10 max-w-[180px]" />
-              <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-black uppercase tracking-wide text-white/70">Analytics</span>
             </div>
-            <p className="mt-8 text-xs font-black uppercase tracking-wide text-[#8ed5f5]">PEAQ Analytics</p>
-            <h1 className="mt-3 max-w-3xl text-4xl font-black tracking-tight md:text-6xl">Turn testing data into coach-ready athlete reports.</h1>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Create your PEAQ workspace to build athlete profiles, save report history, import testing data, and generate clean performance reports.</p>
+            <h1 className="mt-8 max-w-3xl text-4xl font-black tracking-tight md:text-6xl">Turn <span className="text-[#1e94d2]">data</span> into <span className="text-[#1e94d2]">decisions</span> with coach-ready profiling and reporting.</h1>
+            <p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Create your PEAQ workspace to build athlete profiles, import testing data, and generate clean performance reports.</p>
             <div className="mt-8 grid gap-3 md:grid-cols-3">
               {valueCards.map((card) => (
                 <div key={card.title} className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <div className="mb-4 h-1.5 w-10 rounded-full bg-[#1e94d2]" aria-hidden="true" />
                   <p className="text-sm font-black text-white">{card.title}</p>
                   <p className="mt-2 text-sm leading-6 text-white/60">{card.copy}</p>
                 </div>
@@ -1437,9 +1434,10 @@ function AuthCard({ onCreateCoach }) {
           </div>
         </section>
         <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
-          <BrandMark variant="symbol" className="h-12 w-12" />
-          <p className="mt-6 text-xs font-black uppercase tracking-wide text-[#1e94d2]">Create Your PEAQ Workspace</p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight">Create Your PEAQ Workspace</h2>
+          <div className="flex justify-center py-4">
+            <BrandMark variant="symbol" className="h-24 w-24 md:h-32 md:w-32" />
+          </div>
+          <h2 className="mt-6 text-3xl font-black tracking-tight">Create Your PEAQ Workspace</h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">Start by setting up your coach workspace. You can add athletes after your account is created.</p>
           <div className="mt-6 space-y-4">
             <Field label="Coach Name" value={form.name} onChange={(value) => update("name", value)} />
