@@ -1888,6 +1888,23 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
     setRatingFilter("all");
   }
 
+  function exportWorkspaceData() {
+    const exportedAt = new Date().toISOString();
+    const workspaceExport = {
+      exportVersion: 1,
+      exportedAt,
+      source: "PEAQ Analytics localStorage beta",
+      coach: normalizeCoachWorkspace(coach),
+    };
+    const blob = new Blob([JSON.stringify(workspaceExport, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `peaq-workspace-${slugify(coach.organization || coach.name || "backup")}-${formatDate(exportedAt)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -1910,6 +1927,14 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
           </div>
         </section>
         <section className="grid gap-4 md:grid-cols-5"><SummaryCard label="Athletes" value={coach.athletes.length} helper="Athlete profiles" /><SummaryCard label="All Reports" value={totalReports} helper="Saved testing dates" /><SummaryCard label="Recent Reports" value={latestReports.length} helper="Current snapshots" /><SummaryCard label="Avg Rating" value={avgRating ? avgRating.toFixed(1) : "—"} helper="Latest reports only" /><button onClick={onRunReport} className="rounded-3xl bg-[#1e94d2] p-5 text-left text-white shadow-sm hover:bg-[#167bb0]"><p className="text-xs font-black uppercase tracking-wide text-white/70">New Report</p><p className="mt-2 text-2xl font-black tracking-tight">Run Report</p><p className="mt-1 text-sm font-semibold text-white/75">Start a fresh athlete profile</p></button></section>
+        <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Workspace Backup</p>
+            <h2 className="mt-1 text-2xl font-black tracking-tight">Export beta data</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Download a JSON backup of this coach workspace, including athletes, saved reports, and correction history.</p>
+          </div>
+          <button onClick={exportWorkspaceData} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Export Workspace Data</button>
+        </section>
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div><p className="text-sm font-black uppercase tracking-wide text-slate-500">Athlete Library</p><h2 className="text-2xl font-black tracking-tight">Profiles</h2></div>
