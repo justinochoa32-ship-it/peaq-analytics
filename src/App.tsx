@@ -1712,7 +1712,7 @@ function reportOptionLabel(report: SavedReport, index: number): string {
 }
 
 function uniqueOptions(values: Array<string | null | undefined>): string[] {
-  return [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
+  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
 }
 
 function starRatingMatches(rating: NullableNumber | undefined, range: string): boolean {
