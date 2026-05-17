@@ -776,7 +776,7 @@ function BrandedPageHeader({ eyebrow, title, copy, children }) {
           <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{title}</h1>
           {copy ? <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">{copy}</p> : null}
         </div>
-        {children ? <div className="flex flex-wrap gap-3">{children}</div> : null}
+        {children ? <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">{children}</div> : null}
       </div>
     </section>
   );
@@ -825,8 +825,9 @@ function LimiterPill({ value }) {
 }
 
 function StatusPill({ value }) {
-  const tone = value.includes("Near") ? "bg-emerald-100 text-emerald-800" : value.includes("Limited") || value.includes("Broad") ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-700";
-  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${tone}`}>{value}</span>;
+  const label = value || "No Status";
+  const tone = label.includes("Near") ? "bg-emerald-100 text-emerald-800" : label.includes("Limited") || label.includes("Broad") ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-700";
+  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${tone}`}>{label}</span>;
 }
 
 function MetricCard({ item }) {
@@ -1490,7 +1491,10 @@ function parseCsvLine(line) {
   let inQuotes = false;
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index];
-    if (char === '"') inQuotes = !inQuotes;
+    if (char === '"' && inQuotes && line[index + 1] === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') inQuotes = !inQuotes;
     else if (char === "," && !inQuotes) {
       result.push(current.trim());
       current = "";
@@ -1500,14 +1504,92 @@ function parseCsvLine(line) {
   return result;
 }
 
+function normalizeCsvHeader(header) {
+  const key = String(header || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const aliases = {
+    athletename: "name",
+    testdate: "date",
+    testingdate: "date",
+    dateoftest: "date",
+    dateofbirth: "dob",
+    birthdate: "dob",
+    birthday: "dob",
+    positiongroup: "position",
+    bodyweightlbs: "bodyweight",
+    bodyweightlb: "bodyweight",
+    bodyweightpounds: "bodyweight",
+    bodywt: "bodyweight",
+    weight: "bodyweight",
+    heightin: "height",
+    heightinches: "height",
+    tenyardsprint: "sprint10",
+    yardsprint10: "sprint10",
+    sprint10yard: "sprint10",
+    sprint10: "sprint10",
+    drill505: "drill505",
+    fivezerofive: "drill505",
+    cod505: "drill505",
+    cmj: "cmjHeight",
+    cmjheight: "cmjHeight",
+    countermovementjump: "cmjHeight",
+    mrsi: "mRsi",
+    modifiedreactivestrengthindex: "mRsi",
+    trapbare1rm: "trapBarE1RM",
+    trapbarerm: "trapBarE1RM",
+    trapbar: "trapBarE1RM",
+    e1rm: "trapBarE1RM",
+  };
+  return aliases[key] || templateHeaders.find((headerName) => headerName.toLowerCase() === key) || String(header || "").trim();
+}
+
+function normalizeDateValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(text)) {
+    const [year, month, day] = text.split("-").map(Number);
+    if (year && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+    }
+  }
+
+  const slashDate = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slashDate) {
+    const month = Number(slashDate[1]);
+    const day = Number(slashDate[2]);
+    const rawYear = Number(slashDate[3]);
+    const year = rawYear < 100 ? rawYear + (rawYear >= 50 ? 1900 : 2000) : rawYear;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+    }
+  }
+
+  return text;
+}
+
+function normalizeCsvCell(header, value) {
+  const text = String(value || "").trim();
+  if (header === "sex") {
+    const sex = text.toLowerCase();
+    if (sex === "m" || sex === "male" || sex === "boy") return "Male";
+    if (sex === "f" || sex === "female" || sex === "girl") return "Female";
+    return text;
+  }
+  if (header === "date" || header === "dob") return normalizeDateValue(text);
+  if (["height", "bodyweight", "sprint10", "drill505", "cmjHeight", "mRsi", "trapBarE1RM"].includes(header)) {
+    const numeric = text.replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+    return numeric ? numeric[0] : text;
+  }
+  return text;
+}
+
 function parseCsv(text) {
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
-  const headers = parseCsvLine(lines[0]).map((header) => header.trim());
+  const headers = parseCsvLine(lines[0]).map(normalizeCsvHeader);
   return lines.slice(1).map((line, rowIndex) => {
     const values = parseCsvLine(line);
     const row = { id: `row-${rowIndex + 1}` };
-    headers.forEach((header, index) => { row[header] = values[index] || ""; });
+    headers.forEach((header, index) => { row[header] = normalizeCsvCell(header, values[index]); });
     return row;
   });
 }
@@ -1524,11 +1606,11 @@ function rowsToCsvText(rows) {
 }
 
 function validateImportRow(row) {
-  if (!row.name) return "Missing Required Info";
-  if (!row.sex || !["Male", "Female"].includes(row.sex)) return "Invalid Sex";
-  if (!isIsoDate(row.date)) return "Invalid Test Date";
-  if (!isIsoDate(row.dob)) return "Invalid DOB";
-  if (!row.bodyweight) return "Missing Bodyweight";
+  if (!row.name) return "Missing athlete name";
+  if (!row.sex || !["Male", "Female"].includes(row.sex)) return "Sex must be Male or Female";
+  if (!isIsoDate(row.date)) return "Use YYYY-MM-DD or MM/DD/YYYY for test date";
+  if (!isIsoDate(row.dob)) return "Use YYYY-MM-DD or MM/DD/YYYY for DOB";
+  if (!row.bodyweight) return "Body weight is required";
   return "Complete";
 }
 
@@ -1573,7 +1655,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
   }, [coach.athletes, rows]);
 
   const readyRows = reviewedRows.filter((item) => item.canSave);
-  const needsReviewCount = reviewedRows.filter((item) => item.review.status === "Needs Review").length;
+  const issueCount = reviewedRows.filter((item) => !item.canSave).length;
 
   function updateRowField(rowId, field, value) {
     setActiveFixRowId(rowId);
@@ -1616,7 +1698,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
             <h2 className="text-2xl font-black">Upload or Paste CSV</h2>
             <input type="file" accept=".csv,text/csv" onChange={handleFile} className="mt-5 block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700" />
             <textarea value={csvText} onChange={(event) => { setActiveFixRowId(null); setCsvText(event.target.value); }} className="mt-5 h-72 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs outline-none focus:border-slate-500" />
-            <div className="mt-5 flex flex-wrap gap-3"><button onClick={() => onSaveRows(readyRows)} disabled={readyRows.length === 0} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">Save Ready Rows</button><p className="flex items-center text-sm font-bold text-slate-500">{readyRows.length} ready · {needsReviewCount} need review</p></div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center"><button onClick={() => onSaveRows(readyRows)} disabled={readyRows.length === 0} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">Save Ready Rows</button><p className="text-sm font-bold text-slate-500">{readyRows.length} ready · {issueCount} need attention</p></div>
           </div>
 
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1757,6 +1839,22 @@ function ReportComparison({ reports, onPrintComparison }) {
 
 function AthleteProfile({ athlete, onBack, onOpenReport, onPrintComparison }) {
   const latest = athlete.reports[0];
+  if (!latest) {
+    return (
+      <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+        <div className="mx-auto max-w-7xl space-y-6">
+          <BrandedPageHeader eyebrow="Athlete Profile" title={athlete.name} copy={getAthleteIdentityLine(athlete)}>
+            <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
+          </BrandedPageHeader>
+          <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
+            <p className="text-2xl font-black text-slate-950">No saved reports yet.</p>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a complete CSV row for this athlete before reviewing scores, limiters, or report history.</p>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -2035,7 +2133,48 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
             </div>
           ) : null}
 
-          {coach.athletes.length === 0 ? <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No athletes yet.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a CSV to start building your athlete library.</p><div className="mt-6 flex flex-wrap justify-center gap-3"><button onClick={onRunReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Run New Report</button><button onClick={onCsvImport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100">Import CSV</button></div></div> : filteredAthletes.length === 0 ? <div className="mt-5 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center"><p className="text-2xl font-black text-slate-950">No matches found.</p><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Adjust the search or filters to show more athletes.</p></div> : <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200"><div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid"><div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div></div><div className="divide-y divide-slate-100">{filteredAthletes.map((athlete) => { const latest = getLatestReport(athlete); return <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center"><div><p className="font-black text-slate-950">{athlete.name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{getAthleteIdentityLine(athlete)}</p></div><div className="text-sm font-black text-slate-800">{latest.archetype}</div><div><StatusPill value={latest.status} /></div><div><LimiterPill value={latest.primaryLimiter} /></div><div><StarRating value={latest.rating} /></div><div className="flex flex-wrap gap-2"><button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button><button onClick={() => onPrintReport(latest.data, latest.profile)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Print Latest</button></div></div>; })}</div></div>}
+          {coach.athletes.length === 0 ? (
+            <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+              <p className="text-2xl font-black text-slate-950">No athletes yet.</p>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a CSV to start building your athlete library.</p>
+              <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row sm:flex-wrap">
+                <button onClick={onRunReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Run New Report</button>
+                <button onClick={onCsvImport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100">Import CSV</button>
+              </div>
+            </div>
+          ) : filteredAthletes.length === 0 ? (
+            <div className="mt-5 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
+              <p className="text-2xl font-black text-slate-950">No matches found.</p>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Adjust the search or filters to show more athletes.</p>
+            </div>
+          ) : (
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+              <div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid">
+                <div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {filteredAthletes.map((athlete) => {
+                  const latest = getLatestReport(athlete);
+                  return (
+                    <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center">
+                      <div>
+                        <p className="font-black text-slate-950">{athlete.name}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">{getAthleteIdentityLine(athlete)}</p>
+                      </div>
+                      <div className="text-sm font-black text-slate-800">{latest?.archetype || "No reports yet"}</div>
+                      <div><StatusPill value={latest?.status} /></div>
+                      <div><LimiterPill value={latest?.primaryLimiter || "No limiter yet"} /></div>
+                      <div><StarRating value={latest?.rating} /></div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button>
+                        <button onClick={() => latest && onPrintReport(latest.data, latest.profile)} disabled={!latest} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Print Latest</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </main>
