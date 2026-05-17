@@ -29,3 +29,14 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## Deployment
+
+The app is prepared for Vercel deployment with `vercel.json`.
+
+Recommended beta URL structure:
+
+- `app.peaqanalytics.com` for the coach app
+- `peaqanalytics.com` for the future marketing/landing site
+
+Deployment details and demo QA steps are in `docs/vercel-deployment.md`.
