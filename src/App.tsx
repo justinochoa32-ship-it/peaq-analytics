@@ -1,6 +1,198 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
-const blankAthlete = {
+type Sex = "Male" | "Female";
+type Direction = "lower" | "higher";
+type MetricKey = "sprint10" | "drill505" | "codDeficit" | "cmjHeight" | "mRsi" | "relativeStrength";
+type BucketKey = "athleticExpression" | "power" | "strength" | "efficiency";
+type ComparisonKey = "overall" | "rating" | MetricKey | BucketKey;
+type AthleteDataKey = "name" | "sex" | "date" | "dob" | "sport" | "position" | "height" | "bodyweight" | "sprint10" | "drill505" | "cmjHeight" | "mRsi" | "trapBarE1RM";
+type NullableNumber = number | null;
+type ViewName = "auth" | "workspace" | "guide" | "print" | "progress-print" | "builder" | "csv" | "athlete" | "saved-report";
+
+type AthleteData = Record<AthleteDataKey, string>;
+
+interface Standard {
+  label: string;
+  unit: string;
+  direction: Direction;
+  poor: number;
+  elite: number;
+}
+
+type StandardsBySex = Record<Sex, Record<MetricKey, Standard>>;
+type RawProfileMetrics = Record<MetricKey, NullableNumber>;
+type ProfileScores = Record<MetricKey, NullableNumber>;
+
+interface MetricItem {
+  key: MetricKey;
+  label: string;
+  unit: string;
+  value: NullableNumber;
+  score: NullableNumber;
+  display: string;
+}
+
+interface BucketItem {
+  key: BucketKey;
+  label: string;
+  score: NullableNumber;
+  status: string;
+}
+
+interface TrainingFocus {
+  primary: string;
+  secondary: string;
+  maintain: string;
+  bullets: string[];
+}
+
+interface Profile {
+  sex: Sex;
+  scores: ProfileScores;
+  scoreList: MetricItem[];
+  bucketItems: BucketItem[];
+  overallScore: NullableNumber;
+  archetype: string;
+  status: string;
+  summary: string;
+  trainingDirection: string;
+  primaryLimiter: string;
+  secondaryLimiter: string;
+  greenFlagOne: string;
+  greenFlagTwo: string;
+  strongestQuality: string;
+  summaryStrength: string;
+  rating: NullableNumber;
+  raw: RawProfileMetrics & {
+    bodyweight: NullableNumber;
+    trapBarE1RM: NullableNumber;
+  };
+  trainingFocus: TrainingFocus;
+}
+
+type ProfileBase = Omit<Profile, "trainingFocus">;
+
+interface SavedReport {
+  id: string;
+  savedAt: string;
+  createdAt?: string | null;
+  correctedAt?: string | null;
+  correctionCount?: number;
+  correctionHistory?: CorrectionSnapshot[];
+  date: string;
+  data: AthleteData;
+  profile: Profile;
+  archetype: string;
+  status: string;
+  primaryLimiter: string;
+  secondaryLimiter: string;
+  rating: NullableNumber;
+  overall: NullableNumber;
+}
+
+interface CorrectionSnapshot {
+  id: string;
+  archivedAt: string;
+  savedAt: string | null;
+  correctedAt: string | null;
+  correctionCount: number;
+  date: string;
+  data: AthleteData;
+  profile: Profile;
+  archetype: string;
+  status: string;
+  primaryLimiter: string;
+  secondaryLimiter: string;
+  rating: NullableNumber;
+  overall: NullableNumber;
+}
+
+interface AthleteProfileRecord {
+  id: string;
+  name: string;
+  dob: string;
+  sex: string;
+  sport: string;
+  position: string;
+  height: string;
+  bodyweight: string;
+  reports: SavedReport[];
+}
+
+interface CoachWorkspace {
+  id: string;
+  name: string;
+  email: string;
+  organization: string;
+  athletes: AthleteProfileRecord[];
+}
+
+interface AthleteIdentity {
+  name: string;
+  dob: string;
+  sex: string;
+  sport: string;
+  position: string;
+}
+
+interface AthleteMatchResult {
+  status: "matched" | "new" | "ambiguous";
+  athlete: AthleteProfileRecord | null;
+  message: string;
+}
+
+interface ReportEntry {
+  data: AthleteData;
+  profile: Profile;
+  preferredAthleteId: string | null;
+}
+
+interface ComparisonMetric {
+  key: ComparisonKey;
+  label: string;
+  unit: string;
+  direction: Direction;
+  decimals: number;
+}
+
+interface ComparisonChange {
+  label: string;
+  tone: string;
+  value: string;
+}
+
+interface ProgressRow {
+  metric: ComparisonMetric;
+  valueA: NullableNumber;
+  valueB: NullableNumber;
+  change: ComparisonChange;
+}
+
+interface CsvRow extends Partial<Record<AthleteDataKey, string>> {
+  id: string;
+  [key: string]: string | undefined;
+}
+
+interface ReviewedCsvRow {
+  row: CsvRow;
+  data: AthleteData;
+  profile: Profile;
+  upload: string;
+  review: {
+    status: string;
+    message: string;
+    canSave: boolean;
+  };
+  canSave: boolean;
+}
+
+interface CorrectionAuditField {
+  key: string;
+  label: string;
+  getValue: (report: SavedReport | CorrectionSnapshot) => string | number | null | undefined;
+}
+
+const blankAthlete: AthleteData = {
   name: "",
   sex: "Male",
   date: new Date().toISOString().slice(0, 10),
@@ -16,7 +208,7 @@ const blankAthlete = {
   trapBarE1RM: "",
 };
 
-const standards = {
+const standards: StandardsBySex = {
   Male: {
     sprint10: { label: "10-Yard Sprint", unit: "sec", direction: "lower", poor: 1.95, elite: 1.5 },
     drill505: { label: "505 Drill", unit: "sec", direction: "lower", poor: 2.5, elite: 1.95 },
@@ -35,7 +227,7 @@ const standards = {
   },
 };
 
-const flagMap = {
+const flagMap: Record<MetricKey, string> = {
   sprint10: "Acceleration",
   drill505: "COD",
   codDeficit: "COD Efficiency",
@@ -44,7 +236,7 @@ const flagMap = {
   relativeStrength: "Strength Capacity",
 };
 
-const summaryStrengthMap = {
+const summaryStrengthMap: Partial<Record<MetricKey, string>> = {
   sprint10: "acceleration ability",
   drill505: "change of direction ability",
   cmjHeight: "jump output",
@@ -52,7 +244,7 @@ const summaryStrengthMap = {
   relativeStrength: "strength capacity",
 };
 
-const templateHeaders = [
+const templateHeaders: AthleteDataKey[] = [
   "name",
   "sex",
   "date",
@@ -76,7 +268,7 @@ const brandAssets = {
   symbol: "/assets/brand/peaq-symbol.png",
 };
 
-const comparisonMetrics = [
+const comparisonMetrics: ComparisonMetric[] = [
   { key: "overall", label: "Overall Score", unit: "", direction: "higher", decimals: 0 },
   { key: "rating", label: "Profile Rating", unit: "stars", direction: "higher", decimals: 1 },
   { key: "sprint10", label: "10-Yard Sprint", unit: "sec", direction: "lower", decimals: 2 },
@@ -90,10 +282,10 @@ const comparisonMetrics = [
   { key: "efficiency", label: "Efficiency", unit: "", direction: "higher", decimals: 0 },
 ];
 
-const progressMetricKeys = ["sprint10", "drill505", "cmjHeight", "mRsi", "relativeStrength"];
-const progressBucketKeys = ["athleticExpression", "power", "strength", "efficiency"];
+const progressMetricKeys: ComparisonKey[] = ["sprint10", "drill505", "cmjHeight", "mRsi", "relativeStrength"];
+const progressBucketKeys: ComparisonKey[] = ["athleticExpression", "power", "strength", "efficiency"];
 
-const correctionAuditFields = [
+const correctionAuditFields: CorrectionAuditField[] = [
   { key: "name", label: "Athlete Name", getValue: (report) => report.data?.name },
   { key: "dob", label: "DOB", getValue: (report) => report.data?.dob },
   { key: "sex", label: "Sex", getValue: (report) => report.data?.sex },
@@ -107,8 +299,8 @@ const correctionAuditFields = [
   { key: "cmjHeight", label: "CMJ Height", getValue: (report) => report.data?.cmjHeight ? `${report.data.cmjHeight} in` : "" },
   { key: "mRsi", label: "mRSI", getValue: (report) => report.data?.mRsi },
   { key: "trapBarE1RM", label: "Trap Bar e1RM", getValue: (report) => report.data?.trapBarE1RM ? `${report.data.trapBarE1RM} lb` : "" },
-  { key: "overall", label: "Overall Score", getValue: (report) => Number.isFinite(report.overall) ? report.overall.toFixed(0) : "" },
-  { key: "rating", label: "Profile Rating", getValue: (report) => Number.isFinite(report.rating) ? `${report.rating.toFixed(1)} stars` : "" },
+  { key: "overall", label: "Overall Score", getValue: (report) => isFiniteNumber(report.overall) ? report.overall.toFixed(0) : "" },
+  { key: "rating", label: "Profile Rating", getValue: (report) => isFiniteNumber(report.rating) ? `${report.rating.toFixed(1)} stars` : "" },
   { key: "archetype", label: "Archetype", getValue: (report) => report.archetype },
   { key: "status", label: "Status", getValue: (report) => report.status },
   { key: "primaryLimiter", label: "Primary Limiter", getValue: (report) => report.primaryLimiter },
@@ -141,7 +333,7 @@ const archetypeGuide = [
   { title: "Profile Pending", copy: "Not enough key testing numbers have been entered yet." },
 ];
 
-function loadStoredCoach() {
+function loadStoredCoach(): CoachWorkspace | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -155,7 +347,7 @@ function loadStoredCoach() {
   }
 }
 
-function saveStoredCoach(coach) {
+function saveStoredCoach(coach: CoachWorkspace | null): void {
   if (typeof window === "undefined") return;
 
   try {
@@ -169,7 +361,7 @@ function saveStoredCoach(coach) {
   }
 }
 
-function slugify(value) {
+function slugify(value: string | number | null | undefined): string {
   return String(value || "")
     .toLowerCase()
     .trim()
@@ -177,16 +369,16 @@ function slugify(value) {
     .replace(/(^-|-$)/g, "");
 }
 
-function normalizeIdentity(value) {
+function normalizeIdentity(value: string | null | undefined): string {
   return String(value || "").trim().toLowerCase();
 }
 
-function getAthleteDob(athlete) {
+function getAthleteDob(athlete: Partial<AthleteProfileRecord> | null | undefined): string {
   const reportWithDob = athlete?.reports?.find((report) => report?.data?.dob);
   return String(athlete?.dob || reportWithDob?.data?.dob || "").trim();
 }
 
-function createUniqueAthleteIdFromParts(parts, usedIds) {
+function createUniqueAthleteIdFromParts(parts: Array<string | number | null | undefined>, usedIds: Set<string>): string {
   const base = `athlete-${slugify(parts.filter(Boolean).join("-")) || "profile"}`;
   let id = base;
   let count = 2;
@@ -198,16 +390,16 @@ function createUniqueAthleteIdFromParts(parts, usedIds) {
   return id;
 }
 
-function createUniqueAthleteId(data, athletes) {
+function createUniqueAthleteId(data: AthleteData, athletes: AthleteProfileRecord[]): string {
   const usedIds = new Set(athletes.map((athlete) => athlete.id));
   const dob = String(data.dob || "").trim();
   const parts = dob ? [data.name, dob] : [data.name, data.sex, data.sport, data.position];
   return createUniqueAthleteIdFromParts(parts, usedIds);
 }
 
-function normalizeAthleteProfile(athlete, index, usedIds) {
-  const reports = Array.isArray(athlete.reports) ? athlete.reports : [];
-  const latestData = reports[0]?.data || {};
+function normalizeAthleteProfile(athlete: Partial<AthleteProfileRecord>, index: number, usedIds: Set<string>): AthleteProfileRecord {
+  const reports: SavedReport[] = Array.isArray(athlete.reports) ? athlete.reports : [];
+  const latestData = reports[0]?.data || blankAthlete;
   const dob = getAthleteDob({ ...athlete, reports });
   const hasStableId = athlete.id && String(athlete.id).startsWith("athlete-") && !usedIds.has(athlete.id);
   const id = hasStableId
@@ -230,13 +422,13 @@ function normalizeAthleteProfile(athlete, index, usedIds) {
   };
 }
 
-function normalizeCoachWorkspace(coach) {
+function normalizeCoachWorkspace(coach: CoachWorkspace | null): CoachWorkspace | null {
   if (!coach || !Array.isArray(coach.athletes)) return coach;
-  const usedIds = new Set();
+  const usedIds = new Set<string>();
   return { ...coach, athletes: coach.athletes.map((athlete, index) => normalizeAthleteProfile(athlete, index, usedIds)) };
 }
 
-function getAthleteIdentity(athlete) {
+function getAthleteIdentity(athlete: Partial<AthleteProfileRecord> | null | undefined): AthleteIdentity {
   return {
     name: normalizeIdentity(athlete?.name),
     dob: normalizeIdentity(getAthleteDob(athlete)),
@@ -246,7 +438,7 @@ function getAthleteIdentity(athlete) {
   };
 }
 
-function getReportIdentity(data) {
+function getReportIdentity(data: Partial<AthleteData> | null | undefined): AthleteIdentity {
   return {
     name: normalizeIdentity(data?.name),
     dob: normalizeIdentity(data?.dob),
@@ -256,7 +448,7 @@ function getReportIdentity(data) {
   };
 }
 
-function getAthleteMatchResult(athletes, data, preferredAthleteId) {
+function getAthleteMatchResult(athletes: AthleteProfileRecord[], data: AthleteData, preferredAthleteId: string | null): AthleteMatchResult {
   if (preferredAthleteId) {
     const preferredAthlete = athletes.find((athlete) => athlete.id === preferredAthleteId);
     if (preferredAthlete) return { status: "matched", athlete: preferredAthlete, message: "Existing athlete profile selected." };
@@ -294,11 +486,11 @@ function getAthleteMatchResult(athletes, data, preferredAthleteId) {
   return { status: "new", athlete: null, message: "New athlete profile." };
 }
 
-function findAthleteMatch(athletes, data, preferredAthleteId) {
+function findAthleteMatch(athletes: AthleteProfileRecord[], data: AthleteData, preferredAthleteId: string | null): AthleteProfileRecord | null {
   return getAthleteMatchResult(athletes, data, preferredAthleteId).athlete;
 }
 
-function findExactNameDobAthlete(athletes, data, excludedAthleteId = null) {
+function findExactNameDobAthlete(athletes: AthleteProfileRecord[], data: AthleteData, excludedAthleteId: string | null = null): AthleteProfileRecord | null {
   const reportIdentity = getReportIdentity(data);
   if (!reportIdentity.name || !reportIdentity.dob) return null;
 
@@ -312,7 +504,7 @@ function findExactNameDobAthlete(athletes, data, excludedAthleteId = null) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-function buildAthleteBase(data, athleteId, existingAthlete) {
+function buildAthleteBase(data: AthleteData, athleteId: string, existingAthlete: AthleteProfileRecord | null | undefined): AthleteProfileRecord {
   return {
     id: athleteId,
     name: data.name || existingAthlete?.name || "Unnamed Athlete",
@@ -326,7 +518,7 @@ function buildAthleteBase(data, athleteId, existingAthlete) {
   };
 }
 
-function getAthleteIdentityLine(athlete) {
+function getAthleteIdentityLine(athlete: AthleteProfileRecord): string {
   const dob = getAthleteDob(athlete);
   const reportCount = athlete.reports?.length || 0;
   return [
@@ -338,35 +530,35 @@ function getAthleteIdentityLine(athlete) {
   ].filter(Boolean).join(" · ");
 }
 
-function formatDate(value) {
+function formatDate(value: string | null | undefined): string {
   return String(value || "").slice(0, 10);
 }
 
-function isIsoDate(value) {
+function isIsoDate(value: string | null | undefined): boolean {
   return !value || /^\d{4}-\d{2}-\d{2}$/.test(String(value));
 }
 
-function getCorrectionHistory(report) {
+function getCorrectionHistory(report: SavedReport | null | undefined): CorrectionSnapshot[] {
   return Array.isArray(report?.correctionHistory) ? report.correctionHistory : [];
 }
 
-function getCorrectionNote(report) {
+function getCorrectionNote(report: SavedReport | null | undefined): string | null {
   if (!report?.correctedAt) return null;
   const correctionCount = report.correctionCount || getCorrectionHistory(report).length;
   const countText = correctionCount ? ` · ${correctionCount} ${correctionCount === 1 ? "correction" : "corrections"}` : "";
   return `Corrected on ${formatDate(report.correctedAt)}${countText}`;
 }
 
-function normalizeAuditValue(value) {
+function normalizeAuditValue(value: string | number | null | undefined): string {
   return String(value ?? "").trim();
 }
 
-function formatAuditValue(value) {
+function formatAuditValue(value: string | number | null | undefined): string {
   const text = normalizeAuditValue(value);
   return text || "—";
 }
 
-function getCorrectionChanges(previousReport, nextReport) {
+function getCorrectionChanges(previousReport: SavedReport | CorrectionSnapshot, nextReport: SavedReport | CorrectionSnapshot) {
   return correctionAuditFields.map((field) => {
     const previousValue = field.getValue(previousReport);
     const nextValue = field.getValue(nextReport);
@@ -380,7 +572,7 @@ function getCorrectionChanges(previousReport, nextReport) {
   }).filter((item) => item.changed);
 }
 
-function buildCorrectionSnapshot(report, archivedAt) {
+function buildCorrectionSnapshot(report: SavedReport, archivedAt: string): CorrectionSnapshot {
   return {
     id: `${report.id}-audit-${Date.now()}`,
     archivedAt,
@@ -399,30 +591,30 @@ function buildCorrectionSnapshot(report, archivedAt) {
   };
 }
 
-function getPossessivePronoun(sex) {
+function getPossessivePronoun(sex: string): string {
   if (sex === "Female") return "her";
   if (sex === "Male") return "his";
   return "their";
 }
 
-function capitalize(value) {
+function capitalize(value: string): string {
   return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
 }
 
-function getCoachSummaryText(data, profile) {
+function getCoachSummaryText(data: AthleteData, profile: Profile): string {
   const athleteName = data.name || "This athlete";
   const possessive = getPossessivePronoun(profile.sex);
   const archetype = profile.archetype.includes("Athlete") ? profile.archetype : `${profile.archetype} athlete`;
   return `${athleteName} currently profiles as a ${archetype}. ${capitalize(possessive)} primary limiter is ${profile.primaryLimiter}, and ${possessive} secondary limiter is ${profile.secondaryLimiter}. Currently, ${possessive} primary strength is ${profile.summaryStrength}. ${capitalize(possessive)} primary training priority should be ${profile.trainingFocus.primary}, with ${profile.trainingFocus.secondary} layered in as a secondary focus, while maintaining ${profile.trainingFocus.maintain}.`;
 }
 
-function importStatusTone(status) {
+function importStatusTone(status: string): string {
   if (status === "Ready") return "bg-emerald-100 text-emerald-800";
   if (status === "Needs Review") return "bg-amber-100 text-amber-900";
   return "bg-rose-100 text-rose-700";
 }
 
-function toNumber(value) {
+function toNumber(value: string | number | null | undefined): NullableNumber {
   if (value === null || value === undefined) return null;
   const text = String(value).trim();
   if (text === "") return null;
@@ -430,25 +622,29 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function average(values) {
-  const clean = values.filter((value) => Number.isFinite(value));
+function isFiniteNumber(value: unknown): value is number {
+  return Number.isFinite(value);
+}
+
+function average(values: NullableNumber[]): NullableNumber {
+  const clean = values.filter(isFiniteNumber);
   return clean.length ? clean.reduce((sum, value) => sum + value, 0) / clean.length : null;
 }
 
-function scoreMetric(value, standard) {
-  if (!Number.isFinite(value) || !standard) return null;
+function scoreMetric(value: NullableNumber, standard: Standard): NullableNumber {
+  if (!isFiniteNumber(value)) return null;
   if (standard.direction === "lower") {
     return clamp(((standard.poor - value) / (standard.poor - standard.elite)) * 100, 0, 100);
   }
   return clamp(((value - standard.poor) / (standard.elite - standard.poor)) * 100, 0, 100);
 }
 
-function scoreLabel(score) {
-  if (!Number.isFinite(score)) return "Missing";
+function scoreLabel(score: NullableNumber | undefined): string {
+  if (!isFiniteNumber(score)) return "Missing";
   if (score >= 80) return "Standout";
   if (score >= 60) return "Strong";
   if (score >= 40) return "Solid";
@@ -456,15 +652,15 @@ function scoreLabel(score) {
   return "Limiter";
 }
 
-function scoreColor(score) {
-  if (!Number.isFinite(score)) return "bg-slate-200";
+function scoreColor(score: NullableNumber | undefined): string {
+  if (!isFiniteNumber(score)) return "bg-slate-200";
   if (score >= 80) return "bg-emerald-500";
   if (score >= 40) return "bg-yellow-300";
   return "bg-rose-500";
 }
 
-function getProfileRating(score, status) {
-  if (!Number.isFinite(score)) return null;
+function getProfileRating(score: NullableNumber, status: string): NullableNumber {
+  if (!isFiniteNumber(score)) return null;
   const complete = status && status.includes("Complete");
   if (score >= 85 && complete) return 5;
   if (score >= 75) return 4.5;
@@ -478,8 +674,8 @@ function getProfileRating(score, status) {
   return 0.5;
 }
 
-function getTrainingFocus(profile) {
-  const focusByLimiter = {
+function getTrainingFocus(profile: Pick<ProfileBase, "archetype" | "primaryLimiter" | "secondaryLimiter" | "summaryStrength">): TrainingFocus {
+  const focusByLimiter: Record<string, TrainingFocus> = {
     Acceleration: {
       primary: "Acceleration / first-step speed",
       secondary: "Force application and sprint mechanics",
@@ -580,26 +776,26 @@ function getTrainingFocus(profile) {
   };
 }
 
-function buildProfile(data) {
+function buildProfile(data: AthleteData): Profile {
   const sex = data.sex === "Female" ? "Female" : "Male";
   const norms = standards[sex];
   const bodyweight = toNumber(data.bodyweight);
   const sprint10 = toNumber(data.sprint10);
   const drill505 = toNumber(data.drill505);
-  const codDeficit = Number.isFinite(sprint10) && Number.isFinite(drill505) ? drill505 - sprint10 : null;
+  const codDeficit = isFiniteNumber(sprint10) && isFiniteNumber(drill505) ? drill505 - sprint10 : null;
   const cmjHeight = toNumber(data.cmjHeight);
   const mRsi = toNumber(data.mRsi);
   const trapBarE1RM = toNumber(data.trapBarE1RM);
-  const relativeStrength = Number.isFinite(bodyweight) && bodyweight > 0 && Number.isFinite(trapBarE1RM) ? trapBarE1RM / bodyweight : null;
+  const relativeStrength = isFiniteNumber(bodyweight) && bodyweight > 0 && isFiniteNumber(trapBarE1RM) ? trapBarE1RM / bodyweight : null;
 
-  const rawMetrics = { sprint10, drill505, codDeficit, cmjHeight, mRsi, relativeStrength };
+  const rawMetrics: RawProfileMetrics = { sprint10, drill505, codDeficit, cmjHeight, mRsi, relativeStrength };
   const sprint10Score = scoreMetric(sprint10, norms.sprint10);
   const rawCodDeficitScore = scoreMetric(codDeficit, norms.codDeficit);
-  const codDeficitScore = Number.isFinite(rawCodDeficitScore) && Number.isFinite(sprint10Score)
+  const codDeficitScore = isFiniteNumber(rawCodDeficitScore) && isFiniteNumber(sprint10Score)
     ? Math.min(rawCodDeficitScore, sprint10Score + 30)
     : rawCodDeficitScore;
 
-  const scores = {
+  const scores: ProfileScores = {
     sprint10: sprint10Score,
     drill505: scoreMetric(drill505, norms.drill505),
     codDeficit: codDeficitScore,
@@ -608,14 +804,18 @@ function buildProfile(data) {
     relativeStrength: scoreMetric(relativeStrength, norms.relativeStrength),
   };
 
-  const scoreList = Object.keys(rawMetrics).map((key) => ({
-    key,
-    label: norms[key].label,
-    unit: norms[key].unit,
-    value: rawMetrics[key],
-    score: scores[key],
-    display: Number.isFinite(rawMetrics[key]) ? `${rawMetrics[key].toFixed(key === "mRsi" || key === "relativeStrength" ? 2 : 2)}${norms[key].unit ? ` ${norms[key].unit}` : ""}` : "Missing",
-  }));
+  const scoreList: MetricItem[] = (Object.keys(rawMetrics) as MetricKey[]).map((key) => {
+    const rawValue = rawMetrics[key];
+    const standard = norms[key];
+    return {
+      key,
+      label: standard.label,
+      unit: standard.unit,
+      value: rawValue,
+      score: scores[key],
+      display: isFiniteNumber(rawValue) ? `${rawValue.toFixed(key === "mRsi" || key === "relativeStrength" ? 2 : 2)}${standard.unit ? ` ${standard.unit}` : ""}` : "Missing",
+    };
+  });
 
   const athleticExpression = average([scores.sprint10, scores.drill505]);
   const power = scores.cmjHeight;
@@ -623,24 +823,26 @@ function buildProfile(data) {
   const efficiency = average([scores.mRsi, scores.codDeficit]);
   const overall = average([athleticExpression, power, strength, efficiency]);
 
-  const bucketItems = [
+  const bucketItems: BucketItem[] = [
     { key: "athleticExpression", label: "Athletic Expression", score: athleticExpression, status: "Transfer-Limited" },
     { key: "power", label: "Power", score: power, status: "Power-Limited" },
     { key: "strength", label: "Strength", score: strength, status: "Strength-Limited" },
     { key: "efficiency", label: "Efficiency", score: efficiency, status: "Efficiency-Limited" },
   ];
 
-  const scoredBucketItems = bucketItems.filter((item) => Number.isFinite(item.score));
+  const scoredBucketItems = bucketItems.filter((item): item is BucketItem & { score: number } => isFiniteNumber(item.score));
   const lowestBucket = [...scoredBucketItems].sort((a, b) => a.score - b.score)[0];
-  const availableScores = scoreList.filter((item) => Number.isFinite(item.score));
+  const availableScores = scoreList.filter((item): item is MetricItem & { score: number } => isFiniteNumber(item.score));
   const sortedLowestMetrics = [...availableScores].sort((a, b) => a.score - b.score);
   let lowestMetric = sortedLowestMetrics[0];
   let secondLowestMetric = sortedLowestMetrics[1];
 
   const jumpOutputMetric = availableScores.find((item) => item.key === "cmjHeight");
   const jumpEfficiencyMetric = availableScores.find((item) => item.key === "mRsi");
-  const jumpOutputAndEfficiencyAreClose = Number.isFinite(jumpOutputMetric?.score) && Number.isFinite(jumpEfficiencyMetric?.score) && Math.abs(jumpOutputMetric.score - jumpEfficiencyMetric.score) <= 5;
-  if (jumpOutputAndEfficiencyAreClose && lowestMetric?.key === "mRsi" && jumpOutputMetric.score <= lowestMetric.score + 5) {
+  const jumpOutputScore = jumpOutputMetric?.score;
+  const jumpEfficiencyScore = jumpEfficiencyMetric?.score;
+  const jumpOutputAndEfficiencyAreClose = isFiniteNumber(jumpOutputScore) && isFiniteNumber(jumpEfficiencyScore) && Math.abs(jumpOutputScore - jumpEfficiencyScore) <= 5;
+  if (jumpOutputAndEfficiencyAreClose && jumpOutputMetric && jumpEfficiencyMetric && lowestMetric?.key === "mRsi" && jumpOutputMetric.score <= lowestMetric.score + 5) {
     lowestMetric = jumpOutputMetric;
     secondLowestMetric = jumpEfficiencyMetric;
   }
@@ -649,16 +851,16 @@ function buildProfile(data) {
   const highest = sortedHighest[0];
   const secondHighest = sortedHighest[1];
   const highestTestedMetric = sortedHighest.find((item) => item.key !== "codDeficit");
-  const mainScores = Object.values(scores).filter(Number.isFinite);
+  const mainScores = Object.values(scores).filter(isFiniteNumber);
   const majorLimiters = mainScores.filter((score) => score < 40).length;
   const noScoreBelow60 = mainScores.length >= 5 && mainScores.every((score) => score >= 60);
   const noScoreBelow40 = mainScores.every((score) => score >= 40);
 
-  const completeAthlete = Number.isFinite(overall) && overall >= 75 && athleticExpression >= 70 && power >= 70 && strength >= 70 && efficiency >= 70 && noScoreBelow60;
-  const developmental = Number.isFinite(overall) && (overall < 40 || scoredBucketItems.filter((item) => item.score < 35).length >= 2 || scoredBucketItems.filter((item) => item.score < 45).length >= 3 || majorLimiters >= 4);
-  const capacityLimited = strength < 50 && lowestBucket?.key === "strength";
-  const bestCapacity = Math.max(Number.isFinite(strength) ? strength : 0, Number.isFinite(power) ? power : 0);
-  const lowestExpression = Math.min(Number.isFinite(athleticExpression) ? athleticExpression : 100, Number.isFinite(efficiency) ? efficiency : 100);
+  const completeAthlete = isFiniteNumber(overall) && isFiniteNumber(athleticExpression) && isFiniteNumber(power) && isFiniteNumber(strength) && isFiniteNumber(efficiency) && overall >= 75 && athleticExpression >= 70 && power >= 70 && strength >= 70 && efficiency >= 70 && noScoreBelow60;
+  const developmental = isFiniteNumber(overall) && (overall < 40 || scoredBucketItems.filter((item) => item.score < 35).length >= 2 || scoredBucketItems.filter((item) => item.score < 45).length >= 3 || majorLimiters >= 4);
+  const capacityLimited = isFiniteNumber(strength) && strength < 50 && lowestBucket?.key === "strength";
+  const bestCapacity = Math.max(isFiniteNumber(strength) ? strength : 0, isFiniteNumber(power) ? power : 0);
+  const lowestExpression = Math.min(isFiniteNumber(athleticExpression) ? athleticExpression : 100, isFiniteNumber(efficiency) ? efficiency : 100);
   const transferLimited = bestCapacity >= 65 && lowestExpression < 55 && bestCapacity - lowestExpression >= 10;
 
   let archetype = "Profile Pending";
@@ -666,7 +868,7 @@ function buildProfile(data) {
   let summary = "Enter key testing numbers to generate an athlete profile.";
   let trainingDirection = "Collect more data.";
 
-  if (mainScores.length >= 4 && Number.isFinite(overall)) {
+  if (mainScores.length >= 4 && isFiniteNumber(overall)) {
     if (completeAthlete) {
       archetype = "Complete Athlete";
       status = "Definitive Complete Athlete";
@@ -701,7 +903,7 @@ function buildProfile(data) {
   const rating = getProfileRating(overall, status);
   const summaryStrength = highestTestedMetric ? summaryStrengthMap[highestTestedMetric.key] || highestTestedMetric.label.toLowerCase() : "strongest tested quality";
 
-  const profile = {
+  const profile: ProfileBase = {
     sex,
     scores,
     scoreList,
@@ -733,7 +935,7 @@ function buildProfile(data) {
   return { ...profile, trainingFocus: getTrainingFocus(profile) };
 }
 
-function Field({ label, value, onChange, suffix, type = "text", required = false }) {
+function Field({ label, value, onChange, suffix, type = "text", required = false }: { label: string; value: string; onChange: (value: string) => void; suffix?: string; type?: string; required?: boolean }) {
   return (
     <label className="block">
       <span className="text-sm font-bold text-slate-700">{label}{required ? <span className="text-rose-500"> *</span> : null}</span>
@@ -745,7 +947,7 @@ function Field({ label, value, onChange, suffix, type = "text", required = false
   );
 }
 
-function SelectField({ label, value, onChange, children }) {
+function SelectField({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode }) {
   return (
     <label className="block">
       <span className="text-sm font-bold text-slate-700">{label}</span>
@@ -756,7 +958,7 @@ function SelectField({ label, value, onChange, children }) {
   );
 }
 
-function BrandMark({ variant = "wordmark", tone = "dark", className = "" }) {
+function BrandMark({ variant = "wordmark", tone = "dark", className = "" }: { variant?: "wordmark" | "symbol"; tone?: "dark" | "light"; className?: string }) {
   const isSymbol = variant === "symbol";
   const src = isSymbol ? brandAssets.symbol : tone === "light" ? brandAssets.wordmarkWhite : brandAssets.wordmark;
   const sizeClass = isSymbol ? "h-11 w-11" : "h-11 w-auto";
@@ -764,7 +966,7 @@ function BrandMark({ variant = "wordmark", tone = "dark", className = "" }) {
   return <img src={src} alt="PEAQ Analytics" className={`${sizeClass} object-contain ${className}`} />;
 }
 
-function BrandedPageHeader({ eyebrow, title, copy, children }) {
+function BrandedPageHeader({ eyebrow, title, copy, children }: { eyebrow: string; title: string; copy?: string; children?: ReactNode }) {
   return (
     <section className="rounded-[2rem] bg-[#231f20] p-6 text-white shadow-sm md:p-8">
       <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
@@ -782,8 +984,8 @@ function BrandedPageHeader({ eyebrow, title, copy, children }) {
   );
 }
 
-function StarRating({ value }) {
-  const rating = Number.isFinite(value) ? value : 0;
+function StarRating({ value }: { value: NullableNumber | undefined }) {
+  const rating = isFiniteNumber(value) ? value : 0;
   return (
     <div>
       <div className="flex gap-0.5" aria-label={`${rating} out of 5 stars`}>
@@ -797,12 +999,12 @@ function StarRating({ value }) {
           );
         })}
       </div>
-      <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-500">{Number.isFinite(value) ? value.toFixed(1) : "—"} / 5 Stars</p>
+      <p className="mt-1 text-xs font-black uppercase tracking-wide text-slate-500">{isFiniteNumber(value) ? value.toFixed(1) : "—"} / 5 Stars</p>
     </div>
   );
 }
 
-function SummaryCard({ label, value, helper }) {
+function SummaryCard({ label, value, helper }: { label: string; value: ReactNode; helper: ReactNode }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
@@ -812,25 +1014,25 @@ function SummaryCard({ label, value, helper }) {
   );
 }
 
-function ScoreBar({ score }) {
+function ScoreBar({ score }: { score: NullableNumber | undefined }) {
   return (
     <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-      <div className={`h-full rounded-full ${scoreColor(score)}`} style={{ width: Number.isFinite(score) ? `${Math.round(score)}%` : "0%" }} />
+      <div className={`h-full rounded-full ${scoreColor(score)}`} style={{ width: isFiniteNumber(score) ? `${Math.round(score)}%` : "0%" }} />
     </div>
   );
 }
 
-function LimiterPill({ value }) {
+function LimiterPill({ value }: { value: string }) {
   return <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700">{value}</span>;
 }
 
-function StatusPill({ value }) {
+function StatusPill({ value }: { value: string | undefined }) {
   const label = value || "No Status";
   const tone = label.includes("Near") ? "bg-emerald-100 text-emerald-800" : label.includes("Limited") || label.includes("Broad") ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-700";
   return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${tone}`}>{label}</span>;
 }
 
-function MetricCard({ item }) {
+function MetricCard({ item }: { item: MetricItem }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -839,7 +1041,7 @@ function MetricCard({ item }) {
           <p className="text-sm text-slate-500">{item.display}</p>
         </div>
         <div className="text-right">
-          <p className="text-lg font-black text-slate-950">{Number.isFinite(item.score) ? Math.round(item.score) : "—"}</p>
+          <p className="text-lg font-black text-slate-950">{isFiniteNumber(item.score) ? Math.round(item.score) : "—"}</p>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{scoreLabel(item.score)}</p>
         </div>
       </div>
@@ -848,13 +1050,13 @@ function MetricCard({ item }) {
   );
 }
 
-function BucketCard({ bucket }) {
+function BucketCard({ bucket }: { bucket: BucketItem }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">{bucket.label}</p>
-          <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">{Number.isFinite(bucket.score) ? bucket.score.toFixed(0) : "—"}</p>
+          <p className="mt-2 text-4xl font-black tracking-tight text-slate-950">{isFiniteNumber(bucket.score) ? bucket.score.toFixed(0) : "—"}</p>
           <p className="mt-1 text-sm font-bold text-slate-500">{scoreLabel(bucket.score)}</p>
         </div>
         <div className="rounded-2xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">/100</div>
@@ -864,7 +1066,7 @@ function BucketCard({ bucket }) {
   );
 }
 
-function SnapshotCard({ profile }) {
+function SnapshotCard({ profile }: { profile: Profile }) {
   return (
     <div className="rounded-3xl bg-white/10 p-5 print:bg-slate-100">
       <p className="text-xs font-black uppercase tracking-wide text-white/50 print:text-slate-500">Profile Snapshot</p>
@@ -888,7 +1090,7 @@ function SnapshotCard({ profile }) {
   );
 }
 
-function OnePageReport({ data, profile, onBack }) {
+function OnePageReport({ data, profile, onBack }: { data: AthleteData; profile: Profile; onBack: () => void }) {
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
 
   return (
@@ -922,7 +1124,7 @@ function OnePageReport({ data, profile, onBack }) {
             </div>
             <div className="rounded-xl bg-white px-4 py-2 text-center text-slate-950 shadow-sm">
               <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Overall Score</p>
-              <p className="text-3xl font-black tracking-tight">{Number.isFinite(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
+              <p className="text-3xl font-black tracking-tight">{isFiniteNumber(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
             </div>
           </div>
         </div>
@@ -971,7 +1173,7 @@ function OnePageReport({ data, profile, onBack }) {
                 <p className="text-[9px] font-bold text-slate-500">Each bucket contributes 25%.</p>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                {profile.bucketItems.map((bucket) => <div key={bucket.key} className="rounded-xl border border-slate-200 bg-white p-2"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p><p className="mt-0.5 text-xl font-black tracking-tight text-slate-950">{Number.isFinite(bucket.score) ? bucket.score.toFixed(0) : "—"}</p><ScoreBar score={bucket.score} /></div>)}
+                {profile.bucketItems.map((bucket) => <div key={bucket.key} className="rounded-xl border border-slate-200 bg-white p-2"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p><p className="mt-0.5 text-xl font-black tracking-tight text-slate-950">{isFiniteNumber(bucket.score) ? bucket.score.toFixed(0) : "—"}</p><ScoreBar score={bucket.score} /></div>)}
               </div>
             </div>
             <div className="report-card rounded-[1.2rem] border border-slate-200 bg-slate-50 p-3">
@@ -980,7 +1182,7 @@ function OnePageReport({ data, profile, onBack }) {
                 <StatusPill value={profile.status} />
               </div>
               <div className="mt-2 grid grid-cols-3 gap-2">
-                {profile.scoreList.map((item) => <div key={item.key} className="rounded-xl border border-slate-200 bg-white p-2"><div className="flex items-start justify-between gap-2"><div><p className="text-[11px] font-black leading-tight text-slate-950">{item.label}</p><p className="mt-0.5 text-[10px] font-bold text-slate-500">{item.display}</p></div><p className="text-base font-black text-slate-950">{Number.isFinite(item.score) ? Math.round(item.score) : "—"}</p></div><ScoreBar score={item.score} /></div>)}
+                {profile.scoreList.map((item) => <div key={item.key} className="rounded-xl border border-slate-200 bg-white p-2"><div className="flex items-start justify-between gap-2"><div><p className="text-[11px] font-black leading-tight text-slate-950">{item.label}</p><p className="mt-0.5 text-[10px] font-bold text-slate-500">{item.display}</p></div><p className="text-base font-black text-slate-950">{isFiniteNumber(item.score) ? Math.round(item.score) : "—"}</p></div><ScoreBar score={item.score} /></div>)}
               </div>
             </div>
           </div>
@@ -994,7 +1196,7 @@ function OnePageReport({ data, profile, onBack }) {
   );
 }
 
-function ProgressReport({ athlete, reportA, reportB, onBack }) {
+function ProgressReport({ athlete, reportA, reportB, onBack }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void }) {
   const metricRows = getProgressRows(progressMetricKeys, reportA, reportB);
   const bucketRows = getProgressRows(progressBucketKeys, reportA, reportB);
   const ratingMetric = getComparisonMetric("rating");
@@ -1146,7 +1348,7 @@ function ProgressReport({ athlete, reportA, reportB, onBack }) {
   );
 }
 
-function ScoringGuide({ onBack }) {
+function ScoringGuide({ onBack }: { onBack: () => void }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -1155,7 +1357,7 @@ function ScoringGuide({ onBack }) {
         </BrandedPageHeader>
 
         <section className="grid gap-6 lg:grid-cols-2">
-          {["Male", "Female"].map((sex) => (
+          {(["Male", "Female"] as Sex[]).map((sex) => (
             <div key={sex} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
               <div className="bg-slate-950 px-5 py-4 text-white"><p className="text-lg font-black">{sex} Standards</p></div>
               <table className="w-full text-left text-sm">
@@ -1190,7 +1392,25 @@ function ScoringGuide({ onBack }) {
   );
 }
 
-function DashboardReport({ data, profile, onSave, onBack, onPrintReport, saveLabel = "Save Report", extraActions = null, auditNote = null }) {
+function DashboardReport({
+  data,
+  profile,
+  onSave,
+  onBack,
+  onPrintReport,
+  saveLabel = "Save Report",
+  extraActions = null,
+  auditNote = null,
+}: {
+  data: AthleteData;
+  profile: Profile;
+  onSave: (() => void) | null;
+  onBack: () => void;
+  onPrintReport: () => void;
+  saveLabel?: string;
+  extraActions?: ReactNode;
+  auditNote?: string | null;
+}) {
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
   return (
     <section className="space-y-6">
@@ -1213,7 +1433,7 @@ function DashboardReport({ data, profile, onSave, onBack, onPrintReport, saveLab
                 </div>
                 <div className="rounded-2xl bg-slate-950 px-5 py-4 text-center text-white">
                   <p className="text-xs font-black uppercase tracking-wide text-white/50">Overall</p>
-                  <p className="mt-1 text-3xl font-black">{Number.isFinite(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
+                  <p className="mt-1 text-3xl font-black">{isFiniteNumber(profile.overallScore) ? profile.overallScore.toFixed(0) : "—"}</p>
                 </div>
               </div>
             </div>
@@ -1263,9 +1483,23 @@ function DashboardReport({ data, profile, onSave, onBack, onPrintReport, saveLab
   );
 }
 
-function ReportBuilder({ data, setData, onSave, onBack, onPrintReport, mode = "new" }) {
+function ReportBuilder({
+  data,
+  setData,
+  onSave,
+  onBack,
+  onPrintReport,
+  mode = "new",
+}: {
+  data: AthleteData;
+  setData: Dispatch<SetStateAction<AthleteData>>;
+  onSave: (data: AthleteData, profile: Profile) => void;
+  onBack: () => void;
+  onPrintReport: (data: AthleteData, profile: Profile) => void;
+  mode?: "new" | "correction";
+}) {
   const profile = useMemo(() => buildProfile(data), [data]);
-  const update = (key, value) => setData((previous) => ({ ...previous, [key]: value }));
+  const update = (key: AthleteDataKey, value: string) => setData((previous) => ({ ...previous, [key]: value }));
   const isCorrection = mode === "correction";
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -1296,7 +1530,7 @@ function ReportBuilder({ data, setData, onSave, onBack, onPrintReport, mode = "n
               <Field label="mRSI" value={data.mRsi} onChange={(value) => update("mRsi", value)} />
               <Field label="Trap Bar e1RM" value={data.trapBarE1RM} onChange={(value) => update("trapBarE1RM", value)} suffix="lb" />
             </div>
-            <div className="mt-6 rounded-2xl bg-slate-100 p-4 text-sm leading-6 text-slate-600"><span className="font-black text-slate-950">Auto-calculated:</span> COD Deficit = {Number.isFinite(profile.raw.codDeficit) ? `${profile.raw.codDeficit.toFixed(2)} sec` : "missing"}; Relative strength = {Number.isFinite(profile.raw.relativeStrength) ? `${profile.raw.relativeStrength.toFixed(2)} xBW` : "missing"}.</div>
+            <div className="mt-6 rounded-2xl bg-slate-100 p-4 text-sm leading-6 text-slate-600"><span className="font-black text-slate-950">Auto-calculated:</span> COD Deficit = {isFiniteNumber(profile.raw.codDeficit) ? `${profile.raw.codDeficit.toFixed(2)} sec` : "missing"}; Relative strength = {isFiniteNumber(profile.raw.relativeStrength) ? `${profile.raw.relativeStrength.toFixed(2)} xBW` : "missing"}.</div>
           </div>
         </section>
 
@@ -1306,7 +1540,7 @@ function ReportBuilder({ data, setData, onSave, onBack, onPrintReport, mode = "n
   );
 }
 
-function buildSavedReport(data, profile) {
+function buildSavedReport(data: AthleteData, profile: Profile): SavedReport {
   return {
     id: `${slugify(data.name)}-${data.date || new Date().toISOString().slice(0, 10)}-${Date.now()}`,
     savedAt: new Date().toISOString(),
@@ -1322,7 +1556,7 @@ function buildSavedReport(data, profile) {
   };
 }
 
-function buildCorrectedReport(existingReport, data, profile) {
+function buildCorrectedReport(existingReport: SavedReport, data: AthleteData, profile: Profile): SavedReport {
   const correctedAt = new Date().toISOString();
   const correctionHistory = [...getCorrectionHistory(existingReport), buildCorrectionSnapshot(existingReport, correctedAt)];
   return {
@@ -1335,13 +1569,14 @@ function buildCorrectedReport(existingReport, data, profile) {
   };
 }
 
-function buildReportEntry(data, profile, preferredAthleteId = null) {
+function buildReportEntry(data: AthleteData, profile: Profile, preferredAthleteId: string | null = null): ReportEntry {
   return { data, profile, preferredAthleteId };
 }
 
-function addReportEntries(current, entries) {
+function addReportEntries(current: CoachWorkspace | null, entries: ReportEntry[]): CoachWorkspace | null {
   if (!current) return current;
   const normalizedCoach = normalizeCoachWorkspace(current);
+  if (!normalizedCoach) return current;
   let athletes = normalizedCoach.athletes;
   entries.forEach(({ data, profile, preferredAthleteId }) => {
     const report = buildSavedReport(data, profile);
@@ -1355,9 +1590,10 @@ function addReportEntries(current, entries) {
   return { ...normalizedCoach, athletes };
 }
 
-function correctSavedReport(current, athleteId, reportId, data, profile, targetAthleteId = athleteId) {
+function correctSavedReport(current: CoachWorkspace | null, athleteId: string, reportId: string, data: AthleteData, profile: Profile, targetAthleteId = athleteId): CoachWorkspace | null {
   if (!current) return current;
   const normalizedCoach = normalizeCoachWorkspace(current);
+  if (!normalizedCoach) return current;
   const sourceAthlete = normalizedCoach.athletes.find((athlete) => athlete.id === athleteId);
   const existingReport = sourceAthlete?.reports.find((report) => report.id === reportId);
   if (!sourceAthlete || !existingReport) return normalizedCoach;
@@ -1369,7 +1605,7 @@ function correctSavedReport(current, athleteId, reportId, data, profile, targetA
     if (!targetAthlete) return normalizedCoach;
 
     const targetAthleteBase = buildAthleteBase(data, targetAthlete.id, targetAthlete);
-    const athletes = [];
+    const athletes: AthleteProfileRecord[] = [];
     normalizedCoach.athletes.forEach((athlete) => {
       if (athlete.id === athleteId) {
         const remainingReports = athlete.reports.filter((report) => report.id !== reportId);
@@ -1408,33 +1644,33 @@ function correctSavedReport(current, athleteId, reportId, data, profile, targetA
   };
 }
 
-function getLatestReport(athlete) {
+function getLatestReport(athlete: AthleteProfileRecord): SavedReport | undefined {
   return athlete.reports?.[0];
 }
 
-function getReportBucketScore(report, key) {
+function getReportBucketScore(report: SavedReport | null | undefined, key: BucketKey): NullableNumber {
   const bucket = report?.profile?.bucketItems?.find((item) => item.key === key);
-  return bucket?.score;
+  return bucket?.score ?? null;
 }
 
-function getComparisonValue(report, key) {
+function getComparisonValue(report: SavedReport | null | undefined, key: ComparisonKey): NullableNumber {
   if (!report) return null;
   if (key === "overall") return report.overall;
   if (key === "rating") return report.rating;
   if (key === "athleticExpression" || key === "power" || key === "strength" || key === "efficiency") return getReportBucketScore(report, key);
-  return report.profile?.raw?.[key];
+  return report.profile.raw[key as MetricKey];
 }
 
-function formatComparisonValue(value, metric) {
-  if (!Number.isFinite(value)) return "—";
+function formatComparisonValue(value: NullableNumber, metric: ComparisonMetric): string {
+  if (!isFiniteNumber(value)) return "—";
   const display = value.toFixed(metric.decimals);
   return metric.unit ? `${display} ${metric.unit}` : display;
 }
 
-function getComparisonChange(metric, reportA, reportB) {
+function getComparisonChange(metric: ComparisonMetric, reportA: SavedReport, reportB: SavedReport): ComparisonChange {
   const valueA = getComparisonValue(reportA, metric.key);
   const valueB = getComparisonValue(reportB, metric.key);
-  if (!Number.isFinite(valueA) || !Number.isFinite(valueB)) {
+  if (!isFiniteNumber(valueA) || !isFiniteNumber(valueB)) {
     return { label: "Missing", tone: "bg-slate-100 text-slate-500", value: "—" };
   }
 
@@ -1452,41 +1688,42 @@ function getComparisonChange(metric, reportA, reportB) {
     : { label: "Declined", tone: "bg-rose-100 text-rose-700", value };
 }
 
-function getComparisonMetric(key) {
-  return comparisonMetrics.find((metric) => metric.key === key);
+function getComparisonMetric(key: ComparisonKey): ComparisonMetric {
+  const metric = comparisonMetrics.find((item) => item.key === key);
+  if (!metric) return { key: "overall", label: "Overall Score", unit: "", direction: "higher", decimals: 0 };
+  return metric;
 }
 
-function getProgressRows(keys, reportA, reportB) {
+function getProgressRows(keys: ComparisonKey[], reportA: SavedReport, reportB: SavedReport): ProgressRow[] {
   return keys.map((key) => {
     const metric = getComparisonMetric(key);
-    if (!metric) return null;
     return {
       metric,
       valueA: getComparisonValue(reportA, key),
       valueB: getComparisonValue(reportB, key),
       change: getComparisonChange(metric, reportA, reportB),
     };
-  }).filter(Boolean);
+  });
 }
 
-function reportOptionLabel(report, index) {
+function reportOptionLabel(report: SavedReport, index: number): string {
   const label = [report.date, report.archetype].filter(Boolean).join(" · ");
   return `${label || "Saved Report"}${index === 0 ? " (Latest)" : ""}`;
 }
 
-function uniqueOptions(values) {
+function uniqueOptions(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
 }
 
-function starRatingMatches(rating, range) {
+function starRatingMatches(rating: NullableNumber | undefined, range: string): boolean {
   if (range === "all") return true;
-  if (!Number.isFinite(rating)) return false;
+  if (!isFiniteNumber(rating)) return false;
   if (range === "under-3.5") return rating < 3.5;
   return rating >= Number(range);
 }
 
-function parseCsvLine(line) {
-  const result = [];
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
   let current = "";
   let inQuotes = false;
   for (let index = 0; index < line.length; index += 1) {
@@ -1504,9 +1741,9 @@ function parseCsvLine(line) {
   return result;
 }
 
-function normalizeCsvHeader(header) {
+function normalizeCsvHeader(header: string): string {
   const key = String(header || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  const aliases = {
+  const aliases: Record<string, AthleteDataKey> = {
     athletename: "name",
     testdate: "date",
     testingdate: "date",
@@ -1542,7 +1779,7 @@ function normalizeCsvHeader(header) {
   return aliases[key] || templateHeaders.find((headerName) => headerName.toLowerCase() === key) || String(header || "").trim();
 }
 
-function normalizeDateValue(value) {
+function normalizeDateValue(value: string | null | undefined): string {
   const text = String(value || "").trim();
   if (!text) return "";
   if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(text)) {
@@ -1566,7 +1803,7 @@ function normalizeDateValue(value) {
   return text;
 }
 
-function normalizeCsvCell(header, value) {
+function normalizeCsvCell(header: string, value: string | undefined): string {
   const text = String(value || "").trim();
   if (header === "sex") {
     const sex = text.toLowerCase();
@@ -1582,30 +1819,30 @@ function normalizeCsvCell(header, value) {
   return text;
 }
 
-function parseCsv(text) {
+function parseCsv(text: string): CsvRow[] {
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
   const headers = parseCsvLine(lines[0]).map(normalizeCsvHeader);
   return lines.slice(1).map((line, rowIndex) => {
     const values = parseCsvLine(line);
-    const row = { id: `row-${rowIndex + 1}` };
+    const row: CsvRow = { id: `row-${rowIndex + 1}` };
     headers.forEach((header, index) => { row[header] = normalizeCsvCell(header, values[index]); });
     return row;
   });
 }
 
-function escapeCsvValue(value) {
+function escapeCsvValue(value: string | undefined): string {
   const text = String(value ?? "");
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-function rowsToCsvText(rows) {
+function rowsToCsvText(rows: CsvRow[]): string {
   const headerRow = templateHeaders.join(",");
   const dataRows = rows.map((row) => templateHeaders.map((header) => escapeCsvValue(row[header])).join(","));
   return [headerRow, ...dataRows].join("\n");
 }
 
-function validateImportRow(row) {
+function validateImportRow(row: CsvRow): string {
   if (!row.name) return "Missing athlete name";
   if (!row.sex || !["Male", "Female"].includes(row.sex)) return "Sex must be Male or Female";
   if (!isIsoDate(row.date)) return "Use YYYY-MM-DD or MM/DD/YYYY for test date";
@@ -1614,11 +1851,25 @@ function validateImportRow(row) {
   return "Complete";
 }
 
-function csvRowToAthlete(row) {
-  return { ...blankAthlete, ...row, sport: row.sport || "Basketball", date: row.date || new Date().toISOString().slice(0, 10) };
+function csvRowToAthlete(row: CsvRow): AthleteData {
+  return {
+    name: row.name || blankAthlete.name,
+    sex: row.sex || blankAthlete.sex,
+    date: row.date || new Date().toISOString().slice(0, 10),
+    dob: row.dob || blankAthlete.dob,
+    sport: row.sport || "Basketball",
+    position: row.position || blankAthlete.position,
+    height: row.height || blankAthlete.height,
+    bodyweight: row.bodyweight || blankAthlete.bodyweight,
+    sprint10: row.sprint10 || blankAthlete.sprint10,
+    drill505: row.drill505 || blankAthlete.drill505,
+    cmjHeight: row.cmjHeight || blankAthlete.cmjHeight,
+    mRsi: row.mRsi || blankAthlete.mRsi,
+    trapBarE1RM: row.trapBarE1RM || blankAthlete.trapBarE1RM,
+  };
 }
 
-function getImportReview(athletes, data, uploadStatus) {
+function getImportReview(athletes: AthleteProfileRecord[], data: AthleteData, uploadStatus: string): ReviewedCsvRow["review"] {
   if (uploadStatus !== "Complete") {
     return { status: uploadStatus, message: "Fix this row before saving.", canSave: false };
   }
@@ -1630,9 +1881,19 @@ function getImportReview(athletes, data, uploadStatus) {
   return { status: "Ready", message: matchResult.message, canSave: true };
 }
 
-function CsvImport({ coach, onBack, onView, onSaveRows }) {
+function CsvImport({
+  coach,
+  onBack,
+  onView,
+  onSaveRows,
+}: {
+  coach: CoachWorkspace;
+  onBack: () => void;
+  onView: (data: AthleteData) => void;
+  onSaveRows: (items: ReviewedCsvRow[]) => void;
+}) {
   const [csvText, setCsvText] = useState(templateHeaders.join(",") + "\n");
-  const [activeFixRowId, setActiveFixRowId] = useState(null);
+  const [activeFixRowId, setActiveFixRowId] = useState<string | null>(null);
   const rows = useMemo(() => parseCsv(csvText), [csvText]);
   const reviewedRows = useMemo(() => {
     const preparedRows = rows.map((row) => {
@@ -1657,13 +1918,13 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
   const readyRows = reviewedRows.filter((item) => item.canSave);
   const issueCount = reviewedRows.filter((item) => !item.canSave).length;
 
-  function updateRowField(rowId, field, value) {
+  function updateRowField(rowId: string, field: AthleteDataKey, value: string): void {
     setActiveFixRowId(rowId);
     const updatedRows = rows.map((row) => row.id === rowId ? { ...row, [field]: value } : row);
     setCsvText(rowsToCsvText(updatedRows));
   }
 
-  function downloadTemplate() {
+  function downloadTemplate(): void {
     const example = `${templateHeaders.join(",")}\nExample Athlete,Male,2026-05-10,2008-04-15,Basketball,Guard,72,179,1.68,2.07,14.6,0.49,350`;
     const blob = new Blob([example], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -1674,7 +1935,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
     URL.revokeObjectURL(url);
   }
 
-  function handleFile(event) {
+  function handleFile(event: ChangeEvent<HTMLInputElement>): void {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -1715,7 +1976,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
                       <div><span className={`rounded-full px-3 py-1 text-xs font-black ${importStatusTone(item.review.status)}`}>{item.review.status}</span><p className="mt-2 text-xs font-semibold leading-5 text-slate-500">{item.review.message}</p></div>
                       <div className="text-sm font-black text-slate-800">{item.profile.archetype}</div>
                       <div><LimiterPill value={item.profile.primaryLimiter} /></div>
-                      <div><span className="text-sm font-black text-slate-700">{Number.isFinite(item.profile.rating) ? item.profile.rating.toFixed(1) : "—"}</span></div>
+                      <div><span className="text-sm font-black text-slate-700">{isFiniteNumber(item.profile.rating) ? item.profile.rating.toFixed(1) : "—"}</span></div>
                       <div className="flex flex-wrap gap-2"><button onClick={() => onView(item.data)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">View</button><button onClick={() => onSaveRows([item])} disabled={!item.canSave} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Save</button></div>
                       {showFixPanel ? (
                       <div className="rounded-2xl bg-slate-50 p-4 lg:col-span-6">
@@ -1755,7 +2016,7 @@ function CsvImport({ coach, onBack, onView, onSaveRows }) {
   );
 }
 
-function CsvQuickFixField({ label, value, onChange, type = "text" }) {
+function CsvQuickFixField({ label, value, onChange, type = "text" }: { label: string; value?: string; onChange: (value: string) => void; type?: string }) {
   return (
     <label className="block">
       <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</span>
@@ -1764,7 +2025,7 @@ function CsvQuickFixField({ label, value, onChange, type = "text" }) {
   );
 }
 
-function CsvQuickFixSelect({ label, value, onChange, children }) {
+function CsvQuickFixSelect({ label, value, onChange, children }: { label: string; value?: string; onChange: (value: string) => void; children: ReactNode }) {
   return (
     <label className="block">
       <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</span>
@@ -1775,7 +2036,7 @@ function CsvQuickFixSelect({ label, value, onChange, children }) {
   );
 }
 
-function ReportComparison({ reports, onPrintComparison }) {
+function ReportComparison({ reports, onPrintComparison }: { reports: SavedReport[]; onPrintComparison?: (reportA: SavedReport, reportB: SavedReport) => void }) {
   const [reportAId, setReportAId] = useState(reports[1]?.id || reports[0]?.id || "");
   const [reportBId, setReportBId] = useState(reports[0]?.id || "");
 
@@ -1788,6 +2049,7 @@ function ReportComparison({ reports, onPrintComparison }) {
 
   const reportA = reports.find((report) => report.id === reportAId) || reports[0];
   const reportB = reports.find((report) => report.id === reportBId) || reports[1] || reports[0];
+  if (!reportA || !reportB) return null;
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1837,7 +2099,17 @@ function ReportComparison({ reports, onPrintComparison }) {
   );
 }
 
-function AthleteProfile({ athlete, onBack, onOpenReport, onPrintComparison }) {
+function AthleteProfile({
+  athlete,
+  onBack,
+  onOpenReport,
+  onPrintComparison,
+}: {
+  athlete: AthleteProfileRecord;
+  onBack: () => void;
+  onOpenReport: (report: SavedReport) => void;
+  onPrintComparison: (reportA: SavedReport, reportB: SavedReport) => void;
+}) {
   const latest = athlete.reports[0];
   if (!latest) {
     return (
@@ -1861,7 +2133,7 @@ function AthleteProfile({ athlete, onBack, onOpenReport, onPrintComparison }) {
         <BrandedPageHeader eyebrow="Athlete Profile" title={athlete.name} copy={getAthleteIdentityLine(athlete)}>
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
         </BrandedPageHeader>
-        <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={Number.isFinite(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={Number.isFinite(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
+        <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
         <ReportComparison reports={athlete.reports} onPrintComparison={onPrintComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
       </div>
@@ -1869,7 +2141,7 @@ function AthleteProfile({ athlete, onBack, onOpenReport, onPrintComparison }) {
   );
 }
 
-function CorrectionAuditTrail({ report }) {
+function CorrectionAuditTrail({ report }: { report: SavedReport }) {
   const history = getCorrectionHistory(report);
   if (!history.length) return null;
 
@@ -1929,7 +2201,19 @@ function CorrectionAuditTrail({ report }) {
   );
 }
 
-function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) {
+function SavedReportView({
+  athlete,
+  report,
+  onBack,
+  onCorrect,
+  onPrintReport,
+}: {
+  athlete: AthleteProfileRecord;
+  report: SavedReport;
+  onBack: () => void;
+  onCorrect: () => void;
+  onPrintReport: (data: AthleteData, profile: Profile) => void;
+}) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -1951,15 +2235,15 @@ function SavedReportView({ athlete, report, onBack, onCorrect, onPrintReport }) 
   );
 }
 
-function AuthCard({ onCreateCoach }) {
+function AuthCard({ onCreateCoach }: { onCreateCoach: (coach: CoachWorkspace) => void }) {
   const [form, setForm] = useState({ name: "", email: "", organization: "" });
   const valueCards = [
     { title: "Import", copy: "Enter testing data manually or upload it from CSV." },
     { title: "Profile", copy: "Archetype athletes from speed, COD, jump, strength, and efficiency." },
     { title: "Track", copy: "Save report history and compare progress over time." },
   ];
-  function update(key, value) { setForm((current) => ({ ...current, [key]: value })); }
-  function submit() {
+  function update(key: "name" | "email" | "organization", value: string): void { setForm((current) => ({ ...current, [key]: value })); }
+  function submit(): void {
     if (!form.name.trim() || !form.email.trim() || !form.organization.trim()) return;
     onCreateCoach({ id: slugify(`${form.name}-${form.organization}`), ...form, athletes: [] });
   }
@@ -2002,7 +2286,23 @@ function AuthCard({ onCreateCoach }) {
   );
 }
 
-function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, onGuide, onPrintReport }) {
+function Workspace({
+  coach,
+  onLogout,
+  onRunReport,
+  onCsvImport,
+  onOpenAthlete,
+  onGuide,
+  onPrintReport,
+}: {
+  coach: CoachWorkspace;
+  onLogout: () => void;
+  onRunReport: () => void;
+  onCsvImport: () => void;
+  onOpenAthlete: (id: string) => void;
+  onGuide: () => void;
+  onPrintReport: (data: AthleteData, profile: Profile) => void;
+}) {
   const [librarySearch, setLibrarySearch] = useState("");
   const [librarySort, setLibrarySort] = useState("name-asc");
   const [sexFilter, setSexFilter] = useState("all");
@@ -2011,7 +2311,7 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
   const [limiterFilter, setLimiterFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
   const totalReports = coach.athletes.reduce((sum, athlete) => sum + athlete.reports.length, 0);
-  const latestReports = coach.athletes.map((athlete) => getLatestReport(athlete)).filter(Boolean);
+  const latestReports = coach.athletes.map((athlete) => getLatestReport(athlete)).filter((report): report is SavedReport => Boolean(report));
   const avgRating = latestReports.length ? latestReports.reduce((sum, report) => sum + (report.rating || 0), 0) / latestReports.length : null;
   const filterOptions = useMemo(() => ({
     sex: uniqueOptions(coach.athletes.map((athlete) => athlete.sex)),
@@ -2036,8 +2336,8 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
       const latestA = getLatestReport(a);
       const latestB = getLatestReport(b);
       if (librarySort === "name-desc") return b.name.localeCompare(a.name);
-      if (librarySort === "rating-desc") return (Number.isFinite(latestB?.rating) ? latestB.rating : -1) - (Number.isFinite(latestA?.rating) ? latestA.rating : -1);
-      if (librarySort === "rating-asc") return (Number.isFinite(latestA?.rating) ? latestA.rating : 999) - (Number.isFinite(latestB?.rating) ? latestB.rating : 999);
+      if (librarySort === "rating-desc") return (isFiniteNumber(latestB?.rating) ? latestB.rating : -1) - (isFiniteNumber(latestA?.rating) ? latestA.rating : -1);
+      if (librarySort === "rating-asc") return (isFiniteNumber(latestA?.rating) ? latestA.rating : 999) - (isFiniteNumber(latestB?.rating) ? latestB.rating : 999);
       if (librarySort === "date-desc") return String(latestB?.date || "").localeCompare(String(latestA?.date || ""));
       if (librarySort === "date-asc") return String(latestA?.date || "").localeCompare(String(latestB?.date || ""));
       return a.name.localeCompare(b.name);
@@ -2182,34 +2482,34 @@ function Workspace({ coach, onLogout, onRunReport, onCsvImport, onOpenAthlete, o
 }
 
 export default function AthleteProfilingMVP() {
-  const [coach, setCoach] = useState(loadStoredCoach);
-  const [view, setView] = useState("auth");
-  const [builderData, setBuilderData] = useState(blankAthlete);
-  const [builderAthleteId, setBuilderAthleteId] = useState(null);
-  const [builderReportId, setBuilderReportId] = useState(null);
-  const [selectedAthleteId, setSelectedAthleteId] = useState(null);
-  const [selectedReportId, setSelectedReportId] = useState(null);
-  const [printData, setPrintData] = useState(null);
-  const [printProfile, setPrintProfile] = useState(null);
-  const [progressPrint, setProgressPrint] = useState(null);
+  const [coach, setCoach] = useState<CoachWorkspace | null>(loadStoredCoach);
+  const [view, setView] = useState<ViewName>("auth");
+  const [builderData, setBuilderData] = useState<AthleteData>(blankAthlete);
+  const [builderAthleteId, setBuilderAthleteId] = useState<string | null>(null);
+  const [builderReportId, setBuilderReportId] = useState<string | null>(null);
+  const [selectedAthleteId, setSelectedAthleteId] = useState<string | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [printData, setPrintData] = useState<AthleteData | null>(null);
+  const [printProfile, setPrintProfile] = useState<Profile | null>(null);
+  const [progressPrint, setProgressPrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
 
   useEffect(() => {
     saveStoredCoach(coach);
   }, [coach]);
 
-  function openPrintReport(data, profile) {
+  function openPrintReport(data: AthleteData, profile: Profile): void {
     setPrintData(data);
     setPrintProfile(profile);
     setView("print");
   }
 
-  function openProgressReport(athlete, reportA, reportB) {
+  function openProgressReport(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): void {
     setProgressPrint({ athlete, reportA, reportB });
     setSelectedAthleteId(athlete.id);
     setView("progress-print");
   }
 
-  function saveReport(data, profile) {
+  function saveReport(data: AthleteData, profile: Profile): void {
     if (!coach || !data.name.trim()) {
       alert("Add an athlete name before saving this report.");
       return;
@@ -2233,7 +2533,7 @@ export default function AthleteProfilingMVP() {
     window.setTimeout(() => alert("Report saved to Athlete Library."), 100);
   }
 
-  function saveImportedRows(items) {
+  function saveImportedRows(items: ReviewedCsvRow[]): void {
     if (!coach || items.length === 0) return;
     const saveableItems = items.filter((item) => item.canSave !== false);
     if (saveableItems.length === 0) {
