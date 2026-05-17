@@ -147,6 +147,12 @@ interface ReportEntry {
   preferredAthleteId: string | null;
 }
 
+interface AppHistoryState {
+  view: ViewName;
+  selectedAthleteId: string | null;
+  selectedReportId: string | null;
+}
+
 interface ComparisonMetric {
   key: ComparisonKey;
   label: string;
@@ -326,10 +332,10 @@ const starRatingOptions = [
 
 const archetypeGuide = [
   { title: "Complete Athlete", copy: "Elite across athletic expression, power, strength, and efficiency with no obvious primary limiter." },
-  { title: "Developmental", copy: "Multiple buckets need development, requiring a broad training emphasis." },
+  { title: "Foundational Profile", copy: "Solid foundational base, but needs to improve 1-2 categories to reach Complete Athlete status." },
   { title: "Capacity-Limited", copy: "Overall horsepower and capacity are limiting the ceiling of the rest of the profile." },
   { title: "Transfer-Limited", copy: "Capacity exists, but it is not showing up cleanly in athletic expression or efficiency." },
-  { title: "Foundational Profile", copy: "Solid foundational base, but needs to improve 1-2 categories to reach Complete Athlete status." },
+  { title: "Developmental", copy: "Multiple buckets need development, requiring a broad training emphasis." },
   { title: "Profile Pending", copy: "Not enough key testing numbers have been entered yet." },
 ];
 
@@ -515,6 +521,18 @@ function buildAthleteBase(data: AthleteData, athleteId: string, existingAthlete:
     height: data.height || existingAthlete?.height || "",
     bodyweight: data.bodyweight || existingAthlete?.bodyweight || "",
     reports: [],
+  };
+}
+
+function buildAthleteReportDraft(athlete: AthleteProfileRecord): AthleteData {
+  return {
+    ...blankAthlete,
+    name: athlete.name,
+    sex: athlete.sex || "Male",
+    date: new Date().toISOString().slice(0, 10),
+    dob: getAthleteDob(athlete),
+    sport: athlete.sport || "Basketball",
+    position: athlete.position || "",
   };
 }
 
@@ -1097,10 +1115,15 @@ function OnePageReport({ data, profile, onBack }: { data: AthleteData; profile: 
     <main className="min-h-screen bg-white p-3 text-slate-950 print:p-0">
       <style>{`
         @page { size: letter landscape; margin: 0.2in; }
+        @media screen {
+          .report-preview-frame { overflow-x: auto; padding-bottom: 1rem; }
+          .report-page { width: 10.6in; max-width: none; }
+        }
         @media print {
           html, body { background: #ffffff !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .no-print { display: none !important; }
+          .report-preview-frame { overflow: visible; padding: 0; }
           .report-page { width: 10.6in; page-break-inside: avoid; page-break-after: avoid; }
           .report-page .report-card { break-inside: avoid; }
         }
@@ -1111,7 +1134,8 @@ function OnePageReport({ data, profile, onBack }: { data: AthleteData; profile: 
         <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
       </div>
 
-      <section className="report-page mx-auto max-w-[10.6in] bg-white text-slate-950">
+      <div className="report-preview-frame">
+      <section className="report-page mx-auto bg-white text-slate-950">
         <div className="rounded-[1.25rem] bg-[#231f20] p-3 text-white">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -1192,6 +1216,7 @@ function OnePageReport({ data, profile, onBack }: { data: AthleteData; profile: 
           <span className="text-[#1e94d2]">PEAQ Analytics</span>
         </div>
       </section>
+      </div>
     </main>
   );
 }
@@ -1212,10 +1237,15 @@ function ProgressReport({ athlete, reportA, reportB, onBack }: { athlete: Athlet
     <main className="min-h-screen bg-white p-3 text-slate-950 print:p-0">
       <style>{`
         @page { size: letter landscape; margin: 0.25in; }
+        @media screen {
+          .report-preview-frame { overflow-x: auto; padding-bottom: 1rem; }
+          .progress-report-page { width: 10.4in; max-width: none; }
+        }
         @media print {
           html, body { background: #ffffff !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .no-print { display: none !important; }
+          .report-preview-frame { overflow: visible; padding: 0; }
           .progress-report-page { width: 10.4in; page-break-inside: avoid; page-break-after: avoid; }
           .progress-report-card { break-inside: avoid; }
         }
@@ -1226,7 +1256,8 @@ function ProgressReport({ athlete, reportA, reportB, onBack }: { athlete: Athlet
         <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
       </div>
 
-      <section className="progress-report-page mx-auto max-w-[10.4in] bg-white text-slate-950">
+      <div className="report-preview-frame">
+      <section className="progress-report-page mx-auto bg-white text-slate-950">
         <div className="rounded-[1.25rem] bg-[#231f20] p-4 text-white">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -1344,6 +1375,7 @@ function ProgressReport({ athlete, reportA, reportB, onBack }: { athlete: Athlet
           <span className="text-[#1e94d2]">PEAQ Analytics</span>
         </div>
       </section>
+      </div>
     </main>
   );
 }
@@ -2102,11 +2134,13 @@ function ReportComparison({ reports, onPrintComparison }: { reports: SavedReport
 function AthleteProfile({
   athlete,
   onBack,
+  onRunReport,
   onOpenReport,
   onPrintComparison,
 }: {
   athlete: AthleteProfileRecord;
   onBack: () => void;
+  onRunReport: () => void;
   onOpenReport: (report: SavedReport) => void;
   onPrintComparison: (reportA: SavedReport, reportB: SavedReport) => void;
 }) {
@@ -2116,6 +2150,7 @@ function AthleteProfile({
       <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
         <div className="mx-auto max-w-7xl space-y-6">
           <BrandedPageHeader eyebrow="Athlete Profile" title={athlete.name} copy={getAthleteIdentityLine(athlete)}>
+            <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
             <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
           </BrandedPageHeader>
           <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
@@ -2131,6 +2166,7 @@ function AthleteProfile({
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <BrandedPageHeader eyebrow="Athlete Profile" title={athlete.name} copy={getAthleteIdentityLine(athlete)}>
+          <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
         </BrandedPageHeader>
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
@@ -2493,20 +2529,91 @@ export default function AthleteProfilingMVP() {
   const [printProfile, setPrintProfile] = useState<Profile | null>(null);
   const [progressPrint, setProgressPrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
 
+  function navigate(nextView: ViewName, options: { athleteId?: string | null; reportId?: string | null; replace?: boolean } = {}): void {
+    const hasAthleteId = Object.prototype.hasOwnProperty.call(options, "athleteId");
+    const hasReportId = Object.prototype.hasOwnProperty.call(options, "reportId");
+    const nextAthleteId = hasAthleteId ? options.athleteId ?? null : selectedAthleteId;
+    const nextReportId = hasReportId ? options.reportId ?? null : selectedReportId;
+    const nextState: AppHistoryState = { view: nextView, selectedAthleteId: nextAthleteId, selectedReportId: nextReportId };
+
+    setSelectedAthleteId(nextAthleteId);
+    setSelectedReportId(nextReportId);
+    setView(nextView);
+
+    if (typeof window === "undefined") return;
+    if (options.replace) {
+      window.history.replaceState(nextState, "", window.location.pathname);
+      return;
+    }
+    window.history.pushState(nextState, "", window.location.pathname);
+  }
+
   useEffect(() => {
     saveStoredCoach(coach);
   }, [coach]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const initialState = window.history.state as Partial<AppHistoryState> | null;
+    if (!initialState?.view) {
+      const initialView: ViewName = coach ? "workspace" : "auth";
+      window.history.replaceState({ view: initialView, selectedAthleteId: null, selectedReportId: null }, "", window.location.pathname);
+      if (coach && view === "auth") setView("workspace");
+    }
+
+    function handlePopState(event: PopStateEvent): void {
+      const state = event.state as AppHistoryState | null;
+      if (!state?.view) {
+        setSelectedAthleteId(null);
+        setSelectedReportId(null);
+        setView(coach ? "workspace" : "auth");
+        return;
+      }
+      setSelectedAthleteId(state.selectedAthleteId ?? null);
+      setSelectedReportId(state.selectedReportId ?? null);
+      setView(state.view);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [coach, view]);
+
+  function goWorkspace(): void {
+    navigate("workspace", { athleteId: null, reportId: null });
+  }
+
+  function startBlankReport(): void {
+    setBuilderAthleteId(null);
+    setBuilderReportId(null);
+    setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) });
+    navigate("builder", { athleteId: null, reportId: null });
+  }
+
+  function startAthleteReport(athlete: AthleteProfileRecord): void {
+    setBuilderAthleteId(athlete.id);
+    setBuilderReportId(null);
+    setBuilderData(buildAthleteReportDraft(athlete));
+    navigate("builder", { athleteId: athlete.id, reportId: null });
+  }
+
+  function openAthlete(athleteId: string): void {
+    navigate("athlete", { athleteId, reportId: null });
+  }
+
+  function openSavedReport(reportId: string): void {
+    navigate("saved-report", { reportId });
+  }
+
   function openPrintReport(data: AthleteData, profile: Profile): void {
     setPrintData(data);
     setPrintProfile(profile);
-    setView("print");
+    navigate("print");
   }
 
   function openProgressReport(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): void {
     setProgressPrint({ athlete, reportA, reportB });
-    setSelectedAthleteId(athlete.id);
-    setView("progress-print");
+    navigate("progress-print", { athleteId: athlete.id, reportId: null });
   }
 
   function saveReport(data: AthleteData, profile: Profile): void {
@@ -2521,15 +2628,18 @@ export default function AthleteProfilingMVP() {
         : false;
       const targetAthleteId = shouldMoveToMatch && matchingAthlete ? matchingAthlete.id : builderAthleteId;
       setCoach((current) => correctSavedReport(current, builderAthleteId, builderReportId, data, profile, targetAthleteId));
-      setSelectedAthleteId(targetAthleteId);
       setBuilderReportId(null);
-      setView("workspace");
+      navigate("workspace", { athleteId: targetAthleteId, reportId: null });
       window.setTimeout(() => alert(shouldMoveToMatch ? "Correction saved and moved to the matching athlete profile. Previous version kept in the audit trail." : "Correction saved. Previous version kept in the audit trail."), 100);
       return;
     }
     const entry = buildReportEntry(data, profile, builderAthleteId);
     setCoach((current) => addReportEntries(current, [entry]));
-    setView("workspace");
+    if (builderAthleteId) {
+      navigate("athlete", { athleteId: builderAthleteId, reportId: null });
+    } else {
+      goWorkspace();
+    }
     window.setTimeout(() => alert("Report saved to Athlete Library."), 100);
   }
 
@@ -2543,26 +2653,40 @@ export default function AthleteProfilingMVP() {
     const entries = saveableItems.map((item) => buildReportEntry(item.data, item.profile));
     const reportLabel = entries.length === 1 ? "report" : "reports";
     setCoach((current) => addReportEntries(current, entries));
-    setView("workspace");
+    goWorkspace();
     window.setTimeout(() => alert(`${entries.length} ${reportLabel} saved to Athlete Library.`), 100);
   }
 
-  if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); setView("workspace"); }} />;
-  if (view === "guide") return <ScoringGuide onBack={() => setView("workspace")} />;
-  if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={() => setView("workspace")} />;
-  if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => setView("athlete")} />;
-  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => setView("workspace")} onPrintReport={openPrintReport} mode={builderReportId ? "correction" : "new"} />;
-  if (view === "csv") return <CsvImport coach={coach} onBack={() => setView("workspace")} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); setView("builder"); }} onSaveRows={saveImportedRows} />;
+  function renderWorkspace(workspace: CoachWorkspace) {
+    return (
+      <Workspace
+        coach={workspace}
+        onLogout={() => { setCoach(null); navigate("auth", { athleteId: null, reportId: null }); }}
+        onRunReport={startBlankReport}
+        onCsvImport={() => navigate("csv", { athleteId: null, reportId: null })}
+        onOpenAthlete={openAthlete}
+        onGuide={() => navigate("guide", { athleteId: null, reportId: null })}
+        onPrintReport={openPrintReport}
+      />
+    );
+  }
+
+  if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); navigate("workspace", { athleteId: null, reportId: null }); }} />;
+  if (view === "guide") return <ScoringGuide onBack={goWorkspace} />;
+  if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} />;
+  if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} />;
+  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => builderAthleteId && !builderReportId ? openAthlete(builderAthleteId) : goWorkspace()} onPrintReport={openPrintReport} mode={builderReportId ? "correction" : "new"} />;
+  if (view === "csv") return <CsvImport coach={coach} onBack={goWorkspace} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); navigate("builder", { athleteId: null, reportId: null }); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
-    if (!athlete) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
-    return <AthleteProfile athlete={athlete} onBack={() => setView("workspace")} onOpenReport={(report) => { setSelectedReportId(report.id); setView("saved-report"); }} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} />;
+    if (!athlete) return renderWorkspace(coach);
+    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     const report = athlete?.reports.find((item) => item.id === selectedReportId);
-    if (!athlete || !report) return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(blankAthlete); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
-    return <SavedReportView athlete={athlete} report={report} onBack={() => setView("athlete")} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(report.data); setView("builder"); }} onPrintReport={openPrintReport} />;
+    if (!athlete || !report) return renderWorkspace(coach);
+    return <SavedReportView athlete={athlete} report={report} onBack={() => openAthlete(athlete.id)} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(report.data); navigate("builder", { athleteId: athlete.id, reportId: report.id }); }} onPrintReport={openPrintReport} />;
   }
-  return <Workspace coach={coach} onLogout={() => setCoach(null)} onRunReport={() => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData({ ...blankAthlete, date: new Date().toISOString().slice(0, 10) }); setView("builder"); }} onCsvImport={() => setView("csv")} onOpenAthlete={(id) => { setSelectedAthleteId(id); setView("athlete"); }} onGuide={() => setView("guide")} onPrintReport={openPrintReport} />;
+  return renderWorkspace(coach);
 }
