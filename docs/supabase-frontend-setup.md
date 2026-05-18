@@ -25,6 +25,17 @@ When deploying the app, add these same values as environment variables in the ho
 
 For `app.peaqanalytics.com`, the hosting provider should inject these at build time.
 
+## Required SQL
+
+Run the migrations in order in the Supabase SQL Editor:
+
+1. `supabase/migrations/001_initial_schema.sql`
+2. `supabase/migrations/002_client_ids_for_beta_sync.sql`
+
+The second migration adds `client_id` fields so the current app can preserve existing local athlete/report IDs while Supabase keeps UUID primary keys internally.
+
 ## Current Status
 
-The database schema and frontend environment scaffold are ready. The app still uses the localStorage beta workspace until the next phase wires Supabase Auth and read/write operations into the current coach, athlete, report, CSV, and correction flows.
+The database schema and frontend environment scaffold are ready.
+
+When Supabase env vars are present, the app shows sign in/sign up, stores coach workspaces in Supabase, and keeps localStorage as a browser backup/migration source. When Supabase env vars are missing, the app falls back to localStorage-only beta mode.

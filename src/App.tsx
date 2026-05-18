@@ -1,4 +1,14 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import {
+  refreshSupabaseSession,
+  sendPasswordReset,
+  signInCoach,
+  signOutCoach,
+  signUpCoach,
+  supabaseConfig,
+  supabaseFetch,
+  type SupabaseSession,
+} from "./supabaseClient";
 
 type Sex = "Male" | "Female";
 type Direction = "lower" | "higher";
@@ -198,6 +208,44 @@ interface CorrectionAuditField {
   getValue: (report: SavedReport | CorrectionSnapshot) => string | number | null | undefined;
 }
 
+interface CloudProfileRow {
+  id: string;
+  email: string | null;
+  coach_name: string | null;
+  organization: string | null;
+}
+
+interface CloudAthleteRow {
+  id: string;
+  client_id: string | null;
+  name: string;
+  dob: string | null;
+  sex: string | null;
+  sport: string | null;
+  position: string | null;
+  height: number | null;
+  bodyweight: number | null;
+}
+
+interface CloudReportRow {
+  id: string;
+  client_id: string | null;
+  athlete_id: string;
+  testing_date: string;
+  raw_inputs: Partial<AthleteData> | null;
+  calculated_profile: Profile | null;
+  overall_score: number | null;
+  profile_rating: number | null;
+  archetype: string | null;
+  status: string | null;
+  primary_limiter: string | null;
+  secondary_limiter: string | null;
+  saved_at: string | null;
+  corrected_at: string | null;
+  correction_count: number | null;
+  correction_history: CorrectionSnapshot[] | null;
+}
+
 const blankAthlete: AthleteData = {
   name: "",
   sex: "Male",
@@ -267,6 +315,7 @@ const templateHeaders: AthleteDataKey[] = [
 ];
 
 const coachStorageKey = "peaq-analytics-coach-workspace";
+const supabaseSessionStorageKey = "peaq-analytics-supabase-session";
 
 const brandAssets = {
   wordmark: "/assets/brand/peaq-name.png",
@@ -364,6 +413,35 @@ function saveStoredCoach(coach: CoachWorkspace | null): void {
     }
   } catch {
     // Keep the app usable if browser storage is unavailable.
+  }
+}
+
+function loadStoredSupabaseSession(): SupabaseSession | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const storedSession = window.localStorage.getItem(supabaseSessionStorageKey);
+    if (!storedSession) return null;
+    const parsed = JSON.parse(storedSession) as Partial<SupabaseSession>;
+    return parsed.accessToken && parsed.refreshToken && parsed.user?.id
+      ? parsed as SupabaseSession
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredSupabaseSession(session: SupabaseSession | null): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    if (session) {
+      window.localStorage.setItem(supabaseSessionStorageKey, JSON.stringify(session));
+    } else {
+      window.localStorage.removeItem(supabaseSessionStorageKey);
+    }
+  } catch {
+    // Local session storage is best-effort; the app remains usable without it.
   }
 }
 
@@ -1676,6 +1754,174 @@ function correctSavedReport(current: CoachWorkspace | null, athleteId: string, r
   };
 }
 
+function isProfile(value: unknown): value is Profile {
+  return Boolean(value && typeof value === "object" && "bucketItems" in value && "scoreList" in value);
+}
+
+function getCloudDate(value: string | null | undefined): string | null {
+  const date = String(value || "").trim();
+  return date || null;
+}
+
+function getCloudNumber(value: string | number | null | undefined): number | null {
+  return toNumber(value);
+}
+
+function normalizeCloudAthleteData(rawInputs: Partial<AthleteData> | null | undefined): AthleteData {
+  const source = rawInputs || {};
+  return templateHeaders.reduce((data, key) => {
+    data[key] = String(source[key] ?? blankAthlete[key] ?? "");
+    return data;
+  }, { ...blankAthlete });
+}
+
+function buildReportFromCloud(row: CloudReportRow): SavedReport {
+  const data = normalizeCloudAthleteData(row.raw_inputs);
+  const profile = isProfile(row.calculated_profile) ? row.calculated_profile : buildProfile(data);
+  return {
+    id: row.client_id || row.id,
+    savedAt: row.saved_at || new Date().toISOString(),
+    correctedAt: row.corrected_at || null,
+    correctionCount: row.correction_count || 0,
+    correctionHistory: Array.isArray(row.correction_history) ? row.correction_history : [],
+    date: row.testing_date || data.date,
+    data,
+    profile,
+    archetype: row.archetype || profile.archetype,
+    status: row.status || profile.status,
+    primaryLimiter: row.primary_limiter || profile.primaryLimiter,
+    secondaryLimiter: row.secondary_limiter || profile.secondaryLimiter,
+    rating: isFiniteNumber(row.profile_rating) ? row.profile_rating : profile.rating,
+    overall: isFiniteNumber(row.overall_score) ? row.overall_score : profile.overallScore,
+  };
+}
+
+async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWorkspace> {
+  const [profileRows, athleteRows, reportRows] = await Promise.all([
+    supabaseFetch<CloudProfileRow[]>("/rest/v1/profiles?select=id,email,coach_name,organization&limit=1", {
+      accessToken: session.accessToken,
+    }),
+    supabaseFetch<CloudAthleteRow[]>("/rest/v1/athletes?select=id,client_id,name,dob,sex,sport,position,height,bodyweight&order=updated_at.desc", {
+      accessToken: session.accessToken,
+    }),
+    supabaseFetch<CloudReportRow[]>("/rest/v1/reports?select=id,client_id,athlete_id,testing_date,raw_inputs,calculated_profile,overall_score,profile_rating,archetype,status,primary_limiter,secondary_limiter,saved_at,corrected_at,correction_count,correction_history&order=testing_date.desc", {
+      accessToken: session.accessToken,
+    }),
+  ]);
+  const profile = profileRows[0];
+  const reportsByAthleteId = new Map<string, SavedReport[]>();
+
+  reportRows.forEach((row) => {
+    const reports = reportsByAthleteId.get(row.athlete_id) || [];
+    reports.push(buildReportFromCloud(row));
+    reportsByAthleteId.set(row.athlete_id, reports);
+  });
+
+  const athletes: AthleteProfileRecord[] = athleteRows.map((row) => ({
+    id: row.client_id || `athlete-${row.id}`,
+    name: row.name,
+    dob: row.dob || "",
+    sex: row.sex || "Male",
+    sport: row.sport || "Basketball",
+    position: row.position || "",
+    height: row.height === null || row.height === undefined ? "" : String(row.height),
+    bodyweight: row.bodyweight === null || row.bodyweight === undefined ? "" : String(row.bodyweight),
+    reports: (reportsByAthleteId.get(row.id) || []).sort((a, b) => b.date.localeCompare(a.date)),
+  }));
+
+  return normalizeCoachWorkspace({
+    id: session.user.id,
+    name: profile?.coach_name || "Coach",
+    email: profile?.email || session.user.email || "",
+    organization: profile?.organization || "PEAQ Analytics",
+    athletes,
+  }) || {
+    id: session.user.id,
+    name: profile?.coach_name || "Coach",
+    email: profile?.email || session.user.email || "",
+    organization: profile?.organization || "PEAQ Analytics",
+    athletes,
+  };
+}
+
+async function saveCoachToSupabase(coach: CoachWorkspace, session: SupabaseSession): Promise<void> {
+  const normalizedCoach = normalizeCoachWorkspace(coach);
+  if (!normalizedCoach) return;
+
+  await supabaseFetch("/rest/v1/profiles?on_conflict=id", {
+    method: "POST",
+    accessToken: session.accessToken,
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify([{
+      id: session.user.id,
+      email: normalizedCoach.email || session.user.email || null,
+      coach_name: normalizedCoach.name || "Coach",
+      organization: normalizedCoach.organization || null,
+    }]),
+  });
+
+  if (!normalizedCoach.athletes.length) return;
+
+  const athleteRows = normalizedCoach.athletes.map((athlete) => ({
+    client_id: athlete.id,
+    coach_id: session.user.id,
+    name: athlete.name || "Unnamed Athlete",
+    dob: getCloudDate(getAthleteDob(athlete)),
+    sex: athlete.sex || null,
+    sport: athlete.sport || null,
+    position: athlete.position || null,
+    height: getCloudNumber(athlete.height),
+    bodyweight: getCloudNumber(athlete.bodyweight),
+  }));
+
+  const savedAthletes = await supabaseFetch<Array<{ id: string; client_id: string }>>("/rest/v1/athletes?on_conflict=coach_id,client_id&select=id,client_id", {
+    method: "POST",
+    accessToken: session.accessToken,
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify(athleteRows),
+  });
+  const athleteIdByClientId = new Map(savedAthletes.map((athlete) => [athlete.client_id, athlete.id]));
+
+  const reportRows = normalizedCoach.athletes.flatMap((athlete) => {
+    const cloudAthleteId = athleteIdByClientId.get(athlete.id);
+    if (!cloudAthleteId) return [];
+
+    return athlete.reports.map((report) => ({
+      client_id: report.id,
+      coach_id: session.user.id,
+      athlete_id: cloudAthleteId,
+      testing_date: getCloudDate(report.date || report.data.date) || new Date().toISOString().slice(0, 10),
+      raw_inputs: report.data,
+      calculated_profile: report.profile,
+      metric_scores: report.profile.scores,
+      bucket_scores: Object.fromEntries(report.profile.bucketItems.map((bucket) => [bucket.key, bucket.score])),
+      overall_score: report.overall,
+      profile_rating: report.rating,
+      archetype: report.archetype,
+      status: report.status,
+      primary_limiter: report.primaryLimiter,
+      secondary_limiter: report.secondaryLimiter,
+      green_flag_one: report.profile.greenFlagOne,
+      green_flag_two: report.profile.greenFlagTwo,
+      training_focus: report.profile.trainingFocus,
+      coach_summary: getCoachSummaryText(report.data, report.profile),
+      saved_at: report.savedAt,
+      corrected_at: report.correctedAt || null,
+      correction_count: report.correctionCount || 0,
+      correction_history: getCorrectionHistory(report),
+    }));
+  });
+
+  if (!reportRows.length) return;
+
+  await supabaseFetch("/rest/v1/reports?on_conflict=coach_id,client_id", {
+    method: "POST",
+    accessToken: session.accessToken,
+    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify(reportRows),
+  });
+}
+
 function getLatestReport(athlete: AthleteProfileRecord): SavedReport | undefined {
   return athlete.reports?.[0];
 }
@@ -2271,17 +2517,62 @@ function SavedReportView({
   );
 }
 
-function AuthCard({ onCreateCoach }: { onCreateCoach: (coach: CoachWorkspace) => void }) {
-  const [form, setForm] = useState({ name: "", email: "", organization: "" });
+function AuthCard({
+  onCreateCoach,
+  cloudEnabled,
+  authMessage,
+  onSignIn,
+  onSignUp,
+  onPasswordReset,
+}: {
+  onCreateCoach: (coach: CoachWorkspace) => void;
+  cloudEnabled: boolean;
+  authMessage: string;
+  onSignIn: (email: string, password: string) => Promise<void>;
+  onSignUp: (name: string, email: string, organization: string, password: string) => Promise<void>;
+  onPasswordReset: (email: string) => Promise<void>;
+}) {
+  const [form, setForm] = useState({ name: "", email: "", organization: "", password: "" });
+  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [submitting, setSubmitting] = useState(false);
   const valueCards = [
     { title: "Import", copy: "Enter testing data manually or upload it from CSV." },
     { title: "Profile", copy: "Archetype athletes from speed, COD, jump, strength, and efficiency." },
     { title: "Track", copy: "Save report history and compare progress over time." },
   ];
-  function update(key: "name" | "email" | "organization", value: string): void { setForm((current) => ({ ...current, [key]: value })); }
-  function submit(): void {
+  function update(key: "name" | "email" | "organization" | "password", value: string): void { setForm((current) => ({ ...current, [key]: value })); }
+  async function submit(): Promise<void> {
+    if (!cloudEnabled) {
+      if (!form.name.trim() || !form.email.trim() || !form.organization.trim()) return;
+      onCreateCoach({ id: slugify(`${form.name}-${form.organization}`), name: form.name, email: form.email, organization: form.organization, athletes: [] });
+      return;
+    }
+    if (!form.email.trim() || !form.password.trim()) return;
+    if (mode === "sign-up" && (!form.name.trim() || !form.organization.trim())) return;
+
+    setSubmitting(true);
+    try {
+      if (mode === "sign-in") {
+        await onSignIn(form.email, form.password);
+      } else {
+        await onSignUp(form.name, form.email, form.organization, form.password);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  async function resetPassword(): Promise<void> {
+    if (!cloudEnabled || !form.email.trim()) return;
+    setSubmitting(true);
+    try {
+      await onPasswordReset(form.email);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  function submitLocalWorkspace(): void {
     if (!form.name.trim() || !form.email.trim() || !form.organization.trim()) return;
-    onCreateCoach({ id: slugify(`${form.name}-${form.organization}`), ...form, athletes: [] });
+    onCreateCoach({ id: slugify(`${form.name}-${form.organization}`), name: form.name, email: form.email, organization: form.organization, athletes: [] });
   }
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -2308,13 +2599,21 @@ function AuthCard({ onCreateCoach }: { onCreateCoach: (coach: CoachWorkspace) =>
           <div className="flex justify-center py-4">
             <BrandMark variant="symbol" className="h-24 w-24 md:h-32 md:w-32" />
           </div>
-          <h2 className="mt-6 text-3xl font-black tracking-tight">Create Your PEAQ Workspace</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-500">Start by setting up your coach workspace. You can add athletes after your account is created.</p>
+          <h2 className="mt-6 text-3xl font-black tracking-tight">{cloudEnabled ? (mode === "sign-in" ? "Sign In to PEAQ" : "Create Your PEAQ Workspace") : "Create Your PEAQ Workspace"}</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-500">{cloudEnabled ? "Use your coach account to access protected athlete profiles, saved reports, and cloud report history." : "Start by setting up your coach workspace. You can add athletes after your account is created."}</p>
+          {authMessage ? <div className="mt-5 rounded-2xl bg-slate-100 p-4 text-sm font-bold text-slate-700">{authMessage}</div> : null}
           <div className="mt-6 space-y-4">
-            <Field label="Coach Name" value={form.name} onChange={(value) => update("name", value)} />
+            {(!cloudEnabled || mode === "sign-up") ? <Field label="Coach Name" value={form.name} onChange={(value) => update("name", value)} /> : null}
             <Field label="Email" value={form.email} onChange={(value) => update("email", value)} />
-            <Field label="Organization" value={form.organization} onChange={(value) => update("organization", value)} />
-            <button onClick={submit} className="w-full rounded-2xl bg-[#1e94d2] px-5 py-4 text-sm font-black text-white hover:bg-[#167bb0]">Create Workspace</button>
+            {cloudEnabled ? <Field label="Password" type="password" value={form.password} onChange={(value) => update("password", value)} /> : null}
+            {(!cloudEnabled || mode === "sign-up") ? <Field label="Organization" value={form.organization} onChange={(value) => update("organization", value)} /> : null}
+            <button onClick={cloudEnabled ? submit : submitLocalWorkspace} disabled={submitting} className="w-full rounded-2xl bg-[#1e94d2] px-5 py-4 text-sm font-black text-white hover:bg-[#167bb0] disabled:opacity-50">{submitting ? "Working..." : cloudEnabled ? (mode === "sign-in" ? "Sign In" : "Create Workspace") : "Create Workspace"}</button>
+            {cloudEnabled ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm font-black">
+                <button onClick={() => setMode(mode === "sign-in" ? "sign-up" : "sign-in")} className="text-[#1e94d2] hover:text-[#167bb0]">{mode === "sign-in" ? "Create an account" : "Already have an account?"}</button>
+                <button onClick={resetPassword} disabled={submitting || !form.email.trim()} className="text-slate-500 hover:text-slate-800 disabled:opacity-40">Reset password</button>
+              </div>
+            ) : null}
           </div>
         </section>
       </div>
@@ -2330,6 +2629,7 @@ function Workspace({
   onOpenAthlete,
   onGuide,
   onPrintReport,
+  syncStatus,
 }: {
   coach: CoachWorkspace;
   onLogout: () => void;
@@ -2338,6 +2638,7 @@ function Workspace({
   onOpenAthlete: (id: string) => void;
   onGuide: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
+  syncStatus?: string;
 }) {
   const [librarySearch, setLibrarySearch] = useState("");
   const [librarySort, setLibrarySort] = useState("name-asc");
@@ -2417,6 +2718,7 @@ function Workspace({
               <div className="flex flex-wrap items-center gap-3">
                 <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
                 <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</span>
+                {syncStatus ? <span className="rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span> : null}
               </div>
               <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">PEAQ Analytics workspace.</p>
@@ -2518,7 +2820,11 @@ function Workspace({
 }
 
 export default function AthleteProfilingMVP() {
-  const [coach, setCoach] = useState<CoachWorkspace | null>(loadStoredCoach);
+  const [coach, setCoach] = useState<CoachWorkspace | null>(() => supabaseConfig.isConfigured ? null : loadStoredCoach());
+  const [authSession, setAuthSession] = useState<SupabaseSession | null>(() => supabaseConfig.isConfigured ? loadStoredSupabaseSession() : null);
+  const [cloudStatus, setCloudStatus] = useState(supabaseConfig.isConfigured ? "Cloud accounts enabled." : "");
+  const [authMessage, setAuthMessage] = useState(supabaseConfig.isConfigured ? "Sign in or create an account to use your protected beta workspace." : "");
+  const [cloudLoadedForUser, setCloudLoadedForUser] = useState<string | null>(null);
   const [view, setView] = useState<ViewName>("auth");
   const [builderData, setBuilderData] = useState<AthleteData>(blankAthlete);
   const [builderAthleteId, setBuilderAthleteId] = useState<string | null>(null);
@@ -2553,6 +2859,24 @@ export default function AthleteProfilingMVP() {
   }, [coach]);
 
   useEffect(() => {
+    saveStoredSupabaseSession(authSession);
+  }, [authSession]);
+
+  useEffect(() => {
+    if (!supabaseConfig.isConfigured || !authSession || cloudLoadedForUser === authSession.user.id) return;
+    if (authSession.expiresAt && authSession.expiresAt < Date.now() + 60_000) {
+      void refreshSupabaseSession(authSession.refreshToken)
+        .then((session) => setAuthSession(session))
+        .catch(() => {
+          setAuthSession(null);
+          setAuthMessage("Session expired. Please sign in again.");
+        });
+      return;
+    }
+    void loadCloudWorkspace(authSession, "Loaded cloud workspace.");
+  }, [authSession, cloudLoadedForUser]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
 
     const initialState = window.history.state as Partial<AppHistoryState> | null;
@@ -2578,6 +2902,125 @@ export default function AthleteProfilingMVP() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, [coach, view]);
+
+  async function loadCloudWorkspace(session: SupabaseSession, successMessage: string): Promise<void> {
+    setCloudStatus("Loading cloud workspace...");
+    try {
+      const cloudCoach = await loadCoachFromSupabase(session);
+      const localCoach = loadStoredCoach();
+      if (cloudCoach.athletes.length === 0 && localCoach?.athletes.length) {
+        const migratedCoach = normalizeCoachWorkspace({
+          ...localCoach,
+          id: session.user.id,
+          email: session.user.email || localCoach.email,
+        }) || localCoach;
+        await saveCoachToSupabase(migratedCoach, session);
+        setCoach(migratedCoach);
+        setCloudStatus("Local workspace migrated and synced to Supabase.");
+      } else {
+        setCoach(cloudCoach);
+        setCloudStatus(successMessage);
+      }
+      setCloudLoadedForUser(session.user.id);
+      navigate("workspace", { athleteId: null, reportId: null, replace: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not load cloud workspace.";
+      setCloudStatus(`Cloud load failed: ${message}`);
+      setAuthMessage(`Cloud load failed: ${message}`);
+      setAuthSession(null);
+      setCoach(null);
+    }
+  }
+
+  function persistCoachToCloud(nextCoach: CoachWorkspace | null): void {
+    if (!nextCoach || !authSession || !supabaseConfig.isConfigured) return;
+    setCloudStatus("Saving to Supabase...");
+    void saveCoachToSupabase(nextCoach, authSession)
+      .then(() => setCloudStatus("Saved to Supabase."))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : "Cloud save failed.";
+        setCloudStatus(`Cloud save failed: ${message}`);
+      });
+  }
+
+  function updateCoach(updater: (current: CoachWorkspace | null) => CoachWorkspace | null): void {
+    setCoach((current) => {
+      const nextCoach = updater(current);
+      persistCoachToCloud(nextCoach);
+      return nextCoach;
+    });
+  }
+
+  async function handleCloudSignIn(email: string, password: string): Promise<void> {
+    setAuthMessage("Signing in...");
+    try {
+      const session = await signInCoach(email.trim(), password);
+      setAuthSession(session);
+      setAuthMessage("Signed in.");
+      await loadCloudWorkspace(session, "Loaded cloud workspace.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Sign in failed.";
+      setAuthMessage(`Sign in failed: ${message}`);
+    }
+  }
+
+  async function handleCloudSignUp(name: string, email: string, organization: string, password: string): Promise<void> {
+    setAuthMessage("Creating your PEAQ workspace...");
+    try {
+      const session = await signUpCoach(email.trim(), password, name.trim(), organization.trim());
+      if (!session) {
+        setAuthMessage("Account created. Check your email to confirm the account, then sign in.");
+        return;
+      }
+      const localCoach = loadStoredCoach();
+      const newCoach: CoachWorkspace = normalizeCoachWorkspace({
+        ...(localCoach?.athletes.length ? localCoach : { athletes: [] }),
+        id: session.user.id,
+        name: name.trim(),
+        email: email.trim(),
+        organization: organization.trim(),
+      }) || { id: session.user.id, name: name.trim(), email: email.trim(), organization: organization.trim(), athletes: [] };
+      await saveCoachToSupabase(newCoach, session);
+      setAuthSession(session);
+      setCoach(newCoach);
+      setCloudLoadedForUser(session.user.id);
+      setAuthMessage("Workspace created.");
+      setCloudStatus(localCoach?.athletes.length ? "Local workspace migrated and synced to Supabase." : "Saved to Supabase.");
+      navigate("workspace", { athleteId: null, reportId: null, replace: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not create workspace.";
+      setAuthMessage(`Create workspace failed: ${message}`);
+    }
+  }
+
+  async function handlePasswordReset(email: string): Promise<void> {
+    setAuthMessage("Sending password reset email...");
+    try {
+      await sendPasswordReset(email.trim());
+      setAuthMessage("Password reset email sent.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not send password reset email.";
+      setAuthMessage(`Password reset failed: ${message}`);
+    }
+  }
+
+  async function handleLogout(): Promise<void> {
+    const session = authSession;
+    setAuthSession(null);
+    setCloudLoadedForUser(null);
+    setCoach(null);
+    saveStoredSupabaseSession(null);
+    setAuthMessage(supabaseConfig.isConfigured ? "Signed out. Sign in to return to your workspace." : "");
+    setCloudStatus("");
+    navigate("auth", { athleteId: null, reportId: null });
+    if (session) {
+      try {
+        await signOutCoach(session.accessToken);
+      } catch {
+        // The local sign-out already succeeded; remote logout can fail if the token expired.
+      }
+    }
+  }
 
   function goWorkspace(): void {
     navigate("workspace", { athleteId: null, reportId: null });
@@ -2627,14 +3070,14 @@ export default function AthleteProfilingMVP() {
         ? window.confirm(`This correction now matches an existing athlete profile:\n\n${matchingAthlete.name}\n${getAthleteIdentityLine(matchingAthlete)}\n\nMove this corrected report to that existing profile?`)
         : false;
       const targetAthleteId = shouldMoveToMatch && matchingAthlete ? matchingAthlete.id : builderAthleteId;
-      setCoach((current) => correctSavedReport(current, builderAthleteId, builderReportId, data, profile, targetAthleteId));
+      updateCoach((current) => correctSavedReport(current, builderAthleteId, builderReportId, data, profile, targetAthleteId));
       setBuilderReportId(null);
       navigate("workspace", { athleteId: targetAthleteId, reportId: null });
       window.setTimeout(() => alert(shouldMoveToMatch ? "Correction saved and moved to the matching athlete profile. Previous version kept in the audit trail." : "Correction saved. Previous version kept in the audit trail."), 100);
       return;
     }
     const entry = buildReportEntry(data, profile, builderAthleteId);
-    setCoach((current) => addReportEntries(current, [entry]));
+    updateCoach((current) => addReportEntries(current, [entry]));
     if (builderAthleteId) {
       navigate("athlete", { athleteId: builderAthleteId, reportId: null });
     } else {
@@ -2652,7 +3095,7 @@ export default function AthleteProfilingMVP() {
     }
     const entries = saveableItems.map((item) => buildReportEntry(item.data, item.profile));
     const reportLabel = entries.length === 1 ? "report" : "reports";
-    setCoach((current) => addReportEntries(current, entries));
+    updateCoach((current) => addReportEntries(current, entries));
     goWorkspace();
     window.setTimeout(() => alert(`${entries.length} ${reportLabel} saved to Athlete Library.`), 100);
   }
@@ -2661,17 +3104,30 @@ export default function AthleteProfilingMVP() {
     return (
       <Workspace
         coach={workspace}
-        onLogout={() => { setCoach(null); navigate("auth", { athleteId: null, reportId: null }); }}
+        onLogout={() => { void handleLogout(); }}
         onRunReport={startBlankReport}
         onCsvImport={() => navigate("csv", { athleteId: null, reportId: null })}
         onOpenAthlete={openAthlete}
         onGuide={() => navigate("guide", { athleteId: null, reportId: null })}
         onPrintReport={openPrintReport}
+        syncStatus={cloudStatus}
       />
     );
   }
 
-  if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); navigate("workspace", { athleteId: null, reportId: null }); }} />;
+  if (supabaseConfig.isConfigured && authSession && !coach) {
+    return (
+      <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+        <section className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-3xl flex-col items-center justify-center rounded-[2rem] bg-white p-10 text-center shadow-sm">
+          <BrandMark variant="symbol" className="h-20 w-20" />
+          <h1 className="mt-6 text-3xl font-black tracking-tight">Loading PEAQ Workspace</h1>
+          <p className="mt-3 text-sm font-bold text-slate-500">{cloudStatus || "Connecting to Supabase..."}</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); navigate("workspace", { athleteId: null, reportId: null }); }} cloudEnabled={supabaseConfig.isConfigured} authMessage={authMessage} onSignIn={handleCloudSignIn} onSignUp={handleCloudSignUp} onPasswordReset={handlePasswordReset} />;
   if (view === "guide") return <ScoringGuide onBack={goWorkspace} />;
   if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} />;
   if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} />;
