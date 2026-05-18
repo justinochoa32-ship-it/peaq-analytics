@@ -18,7 +18,7 @@ type BucketKey = "athleticExpression" | "power" | "strength" | "efficiency";
 type ComparisonKey = "overall" | "rating" | MetricKey | BucketKey;
 type AthleteDataKey = "name" | "sex" | "date" | "dob" | "sport" | "position" | "height" | "bodyweight" | "sprint10" | "drill505" | "cmjHeight" | "mRsi" | "trapBarE1RM";
 type NullableNumber = number | null;
-type ViewName = "auth" | "workspace" | "guide" | "print" | "progress-print" | "builder" | "csv" | "athlete" | "saved-report";
+type ViewName = "auth" | "workspace" | "guide" | "print" | "share-card" | "progress-print" | "builder" | "csv" | "athlete" | "saved-report";
 
 type AthleteData = Record<AthleteDataKey, string>;
 
@@ -1238,7 +1238,258 @@ function SnapshotCard({ profile }: { profile: Profile }) {
   );
 }
 
-function OnePageReport({ data, profile, onBack }: { data: AthleteData; profile: Profile; onBack: () => void }) {
+function compareScoreDescending<T extends { score: NullableNumber | undefined }>(a: T, b: T): number {
+  const scoreA = isFiniteNumber(a.score) ? a.score : -1;
+  const scoreB = isFiniteNumber(b.score) ? b.score : -1;
+  return scoreB - scoreA;
+}
+
+function shareScoreColor(score: NullableNumber | undefined): string {
+  if (!isFiniteNumber(score)) return "#cbd5e1";
+  if (score >= 80) return "#10b981";
+  if (score >= 40) return "#fde047";
+  return "#f43f5e";
+}
+
+function shareScoreText(score: NullableNumber | undefined): string {
+  return isFiniteNumber(score) ? score.toFixed(0) : "--";
+}
+
+function escapeSvgText(value: string | number | null | undefined): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function splitSvgText(value: string, maxLength: number, maxLines: number): string[] {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [""];
+
+  const lines: string[] = [];
+  let currentLine = "";
+
+  words.forEach((word) => {
+    const nextLine = currentLine ? `${currentLine} ${word}` : word;
+    if (nextLine.length <= maxLength || !currentLine) {
+      currentLine = nextLine;
+      return;
+    }
+    lines.push(currentLine);
+    currentLine = word;
+  });
+
+  if (currentLine) lines.push(currentLine);
+
+  if (lines.length <= maxLines) return lines;
+  const trimmed = lines.slice(0, maxLines);
+  trimmed[maxLines - 1] = `${trimmed[maxLines - 1].replace(/\.+$/, "")}...`;
+  return trimmed;
+}
+
+function svgLineGroup(lines: string[], x: number, y: number, lineHeight: number, attrs: string): string {
+  const tspans = lines.map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeSvgText(line)}</tspan>`).join("");
+  return `<text x="${x}" y="${y}" ${attrs}>${tspans}</text>`;
+}
+
+function svgScoreBar(x: number, y: number, width: number, score: NullableNumber | undefined): string {
+  const fillWidth = isFiniteNumber(score) ? (width * clamp(score, 0, 100)) / 100 : 0;
+  return `<rect x="${x}" y="${y}" width="${width}" height="16" rx="8" fill="#e5e7eb"/><rect x="${x}" y="${y}" width="${fillWidth}" height="16" rx="8" fill="${shareScoreColor(score)}"/>`;
+}
+
+function buildShareCardSvg(data: AthleteData, profile: Profile): string {
+  const athleteName = data.name || "Athlete Name";
+  const nameLines = splitSvgText(athleteName, 16, 2);
+  const meta = [data.sex, data.sport, data.position, data.date].filter(Boolean).join(" - ");
+  const bucketHighlights = [...profile.bucketItems].sort(compareScoreDescending).slice(0, 2);
+  const metricHighlights = [...profile.scoreList].sort(compareScoreDescending).slice(0, 3);
+  const summaryLines = splitSvgText(getCoachSummaryText(data, profile), 42, 3);
+  const limiterLines = splitSvgText(profile.primaryLimiter, 18, 2);
+  const strengthLines = splitSvgText(profile.greenFlagOne, 18, 2);
+  const nameText = svgLineGroup(nameLines, 110, 318, 92, 'font-family="Inter, Arial, sans-serif" font-size="86" font-weight="900" fill="#ffffff"');
+  const summaryText = svgLineGroup(summaryLines, 110, 1082, 40, 'font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#334155"');
+  const limiterText = svgLineGroup(limiterLines, 150, 750, 34, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
+  const strengthText = svgLineGroup(strengthLines, 595, 750, 34, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
+
+  const bucketCards = bucketHighlights.map((bucket, index) => {
+    const x = 110 + index * 435;
+    return `
+      <rect x="${x}" y="1270" width="395" height="230" rx="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="${x + 34}" y="1345" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="3">${escapeSvgText(bucket.label.toUpperCase())}</text>
+      <text x="${x + 34}" y="1424" font-family="Inter, Arial, sans-serif" font-size="74" font-weight="900" fill="#020617">${shareScoreText(bucket.score)}</text>
+      ${svgScoreBar(x + 34, 1464, 310, bucket.score)}
+    `;
+  }).join("");
+
+  const metricRows = metricHighlights.map((item, index) => {
+    const y = 1576 + index * 84;
+    return `
+      <text x="126" y="${y}" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="900" fill="#020617">${escapeSvgText(item.label)}</text>
+      <text x="126" y="${y + 34}" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="800" fill="#64748b">${escapeSvgText(item.display)}</text>
+      <text x="845" y="${y + 15}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="900" fill="#020617">${shareScoreText(item.score)}</text>
+      ${svgScoreBar(885, y - 15, 90, item.score)}
+    `;
+  }).join("");
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+      <rect width="1080" height="1920" fill="#f1f5f9"/>
+      <rect x="70" y="70" width="940" height="540" rx="64" fill="#231f20"/>
+      <text x="110" y="155" font-family="Inter, Arial, sans-serif" font-size="40" font-weight="900" fill="#ffffff" letter-spacing="3">PEAQ</text>
+      <text x="230" y="155" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#8ed5f5" letter-spacing="8">PROFILE</text>
+      <rect x="770" y="125" width="170" height="170" rx="34" fill="#ffffff"/>
+      <text x="855" y="178" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">OVERALL</text>
+      <text x="855" y="258" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="86" font-weight="900" fill="#020617">${shareScoreText(profile.overallScore)}</text>
+      ${nameText}
+      <text x="110" y="528" font-family="Inter, Arial, sans-serif" font-size="33" font-weight="800" fill="#ffffff" opacity="0.65">${escapeSvgText(meta || "PEAQ Profile")}</text>
+      <rect x="110" y="674" width="390" height="210" rx="34" fill="#ffffff"/>
+      <text x="150" y="728" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">PRIMARY LIMITER</text>
+      ${limiterText}
+      <rect x="555" y="674" width="390" height="210" rx="34" fill="#ffffff"/>
+      <text x="595" y="728" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">CURRENT STRENGTH</text>
+      ${strengthText}
+      <rect x="70" y="950" width="940" height="240" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="110" y="1034" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">COACH SUMMARY</text>
+      ${summaryText}
+      <text x="110" y="1236" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TOP PROFILE BUCKETS</text>
+      ${bucketCards}
+      <rect x="70" y="1538" width="940" height="290" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="110" y="1610" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TESTED METRICS</text>
+      ${metricRows}
+      <text x="845" y="1866" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#94a3b8" letter-spacing="4">POWERED BY</text>
+      <text x="875" y="1866" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#1e94d2" letter-spacing="4">PEAQ ANALYTICS</text>
+    </svg>
+  `;
+}
+
+function downloadShareCardPng(data: AthleteData, profile: Profile): void {
+  const svg = buildShareCardSvg(data, profile);
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  const image = new Image();
+
+  image.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080;
+    canvas.height = 1920;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      URL.revokeObjectURL(svgUrl);
+      window.alert("Could not create the story card image.");
+      return;
+    }
+    context.drawImage(image, 0, 0);
+    URL.revokeObjectURL(svgUrl);
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        window.alert("Could not create the story card image.");
+        return;
+      }
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `${slugify(data.name || "peaq-profile") || "peaq-profile"}-story-card.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+    }, "image/png");
+  };
+
+  image.onerror = () => {
+    URL.revokeObjectURL(svgUrl);
+    window.alert("Could not create the story card image.");
+  };
+
+  image.src = svgUrl;
+}
+
+function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile: Profile; onBack: () => void }) {
+  const bucketHighlights = [...profile.bucketItems].sort(compareScoreDescending).slice(0, 2);
+  const metricHighlights = [...profile.scoreList].sort(compareScoreDescending).slice(0, 3);
+  const athleteMeta = [data.sex, data.sport, data.position, data.date].filter(Boolean).join(" • ");
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <button onClick={onBack} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50">Back</button>
+          <button onClick={() => downloadShareCardPng(data, profile)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-[#1678ad]">Download Story PNG</button>
+        </div>
+
+        <section className="mx-auto aspect-[9/16] w-full max-w-[430px] overflow-hidden rounded-[2rem] bg-slate-100 p-5 shadow-2xl">
+          <div className="flex h-full flex-col gap-4">
+            <div className="rounded-[1.75rem] bg-[#231f20] p-5 text-white">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <BrandMark variant="wordmark" tone="light" className="h-5 max-w-[96px]" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.22em] text-[#8ed5f5]">Profile</span>
+                  </div>
+                  <h1 className="mt-7 text-4xl font-black leading-none tracking-tight">{data.name || "Athlete Name"}</h1>
+                  <p className="mt-3 text-sm font-bold leading-5 text-white/60">{athleteMeta || "PEAQ Profile"}</p>
+                </div>
+                <div className="shrink-0 rounded-2xl bg-white px-4 py-3 text-center text-slate-950">
+                  <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Overall</p>
+                  <p className="text-4xl font-black leading-none">{shareScoreText(profile.overallScore)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-3xl bg-white p-4 shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Primary Limiter</p>
+                <p className="mt-2 text-lg font-black leading-tight text-slate-950">{profile.primaryLimiter}</p>
+              </div>
+              <div className="rounded-3xl bg-white p-4 shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Current Strength</p>
+                <p className="mt-2 text-lg font-black leading-tight text-slate-950">{profile.greenFlagOne}</p>
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Coach Summary</p>
+              <p className="mt-2 overflow-hidden text-sm font-semibold leading-6 text-slate-600" style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 4 }}>{getCoachSummaryText(data, profile)}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {bucketHighlights.map((bucket) => (
+                <div key={bucket.key} className="rounded-3xl bg-white p-4 shadow-sm">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p>
+                  <p className="mt-2 text-3xl font-black text-slate-950">{shareScoreText(bucket.score)}</p>
+                  <ScoreBar score={bucket.score} />
+                </div>
+              ))}
+            </div>
+
+            <div className="min-h-0 flex-1 rounded-3xl bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Tested Metrics</p>
+              <div className="mt-3 space-y-3">
+                {metricHighlights.map((item) => (
+                  <div key={item.key} className="grid grid-cols-[1fr_auto] items-center gap-3">
+                    <div>
+                      <p className="text-sm font-black leading-tight text-slate-950">{item.label}</p>
+                      <p className="text-xs font-bold text-slate-500">{item.display}</p>
+                    </div>
+                    <p className="text-xl font-black text-slate-950">{shareScoreText(item.score)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-1 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+              <span>Powered by</span>
+              <span className="text-[#1e94d2]">PEAQ Analytics</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteData; profile: Profile; onBack: () => void; onShareCard: () => void }) {
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
 
   return (
@@ -1262,6 +1513,7 @@ function OnePageReport({ data, profile, onBack }: { data: AthleteData; profile: 
       <div className="no-print mx-auto mb-4 flex max-w-7xl flex-wrap gap-3">
         <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
         <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
+        <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Story Card</button>
       </div>
 
       <div className="report-preview-frame">
@@ -1560,6 +1812,7 @@ function DashboardReport({
   onSave,
   onBack,
   onPrintReport,
+  onShareCard,
   saveLabel = "Save Report",
   extraActions = null,
   auditNote = null,
@@ -1569,6 +1822,7 @@ function DashboardReport({
   onSave: (() => void) | null;
   onBack: () => void;
   onPrintReport: () => void;
+  onShareCard?: () => void;
   saveLabel?: string;
   extraActions?: ReactNode;
   auditNote?: string | null;
@@ -1638,6 +1892,7 @@ function DashboardReport({
       <div className="flex flex-wrap gap-3">
         <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
         <button onClick={onPrintReport} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Print Report / PDF</button>
+        {onShareCard ? <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Story Card</button> : null}
         {extraActions}
         {onSave ? <button onClick={onSave} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">{saveLabel}</button> : null}
       </div>
@@ -1651,6 +1906,7 @@ function ReportBuilder({
   onSave,
   onBack,
   onPrintReport,
+  onShareCard,
   mode = "new",
 }: {
   data: AthleteData;
@@ -1658,6 +1914,7 @@ function ReportBuilder({
   onSave: (data: AthleteData, profile: Profile) => void;
   onBack: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
+  onShareCard: (data: AthleteData, profile: Profile) => void;
   mode?: "new" | "correction";
 }) {
   const profile = useMemo(() => buildProfile(data), [data]);
@@ -1696,7 +1953,7 @@ function ReportBuilder({
           </div>
         </section>
 
-        <DashboardReport data={data} profile={profile} onSave={() => onSave(data, profile)} onBack={onBack} onPrintReport={() => onPrintReport(data, profile)} saveLabel={isCorrection ? "Save Correction" : "Save Report"} />
+        <DashboardReport data={data} profile={profile} onSave={() => onSave(data, profile)} onBack={onBack} onPrintReport={() => onPrintReport(data, profile)} onShareCard={() => onShareCard(data, profile)} saveLabel={isCorrection ? "Save Correction" : "Save Report"} />
       </div>
     </main>
   );
@@ -2553,12 +2810,14 @@ function SavedReportView({
   onBack,
   onCorrect,
   onPrintReport,
+  onShareCard,
 }: {
   athlete: AthleteProfileRecord;
   report: SavedReport;
   onBack: () => void;
   onCorrect: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
+  onShareCard: (data: AthleteData, profile: Profile) => void;
 }) {
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -2572,6 +2831,7 @@ function SavedReportView({
           onSave={null}
           onBack={onBack}
           onPrintReport={() => onPrintReport(report.data, report.profile)}
+          onShareCard={() => onShareCard(report.data, report.profile)}
           auditNote={getCorrectionNote(report)}
           extraActions={<button onClick={onCorrect} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Correct Report</button>}
         />
@@ -3044,6 +3304,7 @@ export default function AthleteProfilingMVP() {
   const [printData, setPrintData] = useState<AthleteData | null>(null);
   const [printProfile, setPrintProfile] = useState<Profile | null>(null);
   const [progressPrint, setProgressPrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
+  const [shareCardReturn, setShareCardReturn] = useState<AppHistoryState>({ view: "workspace", selectedAthleteId: null, selectedReportId: null });
   const [passwordRecovery, setPasswordRecovery] = useState<PasswordRecoverySession | null>(null);
 
   function navigate(nextView: ViewName, options: { athleteId?: string | null; reportId?: string | null; replace?: boolean } = {}): void {
@@ -3299,6 +3560,17 @@ export default function AthleteProfilingMVP() {
     navigate("print");
   }
 
+  function openShareCard(data: AthleteData, profile: Profile, returnState: AppHistoryState = { view, selectedAthleteId, selectedReportId }): void {
+    setPrintData(data);
+    setPrintProfile(profile);
+    setShareCardReturn(returnState);
+    navigate("share-card");
+  }
+
+  function returnFromShareCard(): void {
+    navigate(shareCardReturn.view, { athleteId: shareCardReturn.selectedAthleteId, reportId: shareCardReturn.selectedReportId });
+  }
+
   function openProgressReport(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): void {
     setProgressPrint({ athlete, reportA, reportB });
     navigate("progress-print", { athleteId: athlete.id, reportId: null });
@@ -3408,9 +3680,10 @@ export default function AthleteProfilingMVP() {
 
   if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); navigate("workspace", { athleteId: null, reportId: null }); }} cloudEnabled={supabaseConfig.isConfigured} authMessage={authMessage} onSignIn={handleCloudSignIn} onSignUp={handleCloudSignUp} onPasswordReset={handlePasswordReset} />;
   if (view === "guide") return <ScoringGuide onBack={goWorkspace} />;
-  if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} />;
+  if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} onShareCard={() => openShareCard(printData, printProfile, { view: "print", selectedAthleteId, selectedReportId })} />;
+  if (view === "share-card" && printData && printProfile) return <ShareCardExport data={printData} profile={printProfile} onBack={returnFromShareCard} />;
   if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} />;
-  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => builderAthleteId && !builderReportId ? openAthlete(builderAthleteId) : goWorkspace()} onPrintReport={openPrintReport} mode={builderReportId ? "correction" : "new"} />;
+  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => builderAthleteId && !builderReportId ? openAthlete(builderAthleteId) : goWorkspace()} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "builder", selectedAthleteId: builderAthleteId, selectedReportId: builderReportId })} mode={builderReportId ? "correction" : "new"} />;
   if (view === "csv") return <CsvImport coach={coach} onBack={goWorkspace} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); navigate("builder", { athleteId: null, reportId: null }); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
@@ -3421,7 +3694,7 @@ export default function AthleteProfilingMVP() {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     const report = athlete?.reports.find((item) => item.id === selectedReportId);
     if (!athlete || !report) return renderWorkspace(coach);
-    return <SavedReportView athlete={athlete} report={report} onBack={() => openAthlete(athlete.id)} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(report.data); navigate("builder", { athleteId: athlete.id, reportId: report.id }); }} onPrintReport={openPrintReport} />;
+    return <SavedReportView athlete={athlete} report={report} onBack={() => openAthlete(athlete.id)} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(report.data); navigate("builder", { athleteId: athlete.id, reportId: report.id }); }} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "saved-report", selectedAthleteId: athlete.id, selectedReportId: report.id })} />;
   }
   return renderWorkspace(coach);
 }
