@@ -2745,6 +2745,7 @@ function Workspace({
   onCsvImport,
   onOpenAthlete,
   onRestoreAthlete,
+  onBulkArchiveState,
   onGuide,
   onPrintReport,
   syncStatus,
@@ -2755,6 +2756,7 @@ function Workspace({
   onCsvImport: () => void;
   onOpenAthlete: (id: string) => void;
   onRestoreAthlete: (id: string) => void;
+  onBulkArchiveState: (athleteIds: string[], archivedAt: string | null) => void;
   onGuide: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
   syncStatus?: string;
@@ -2767,6 +2769,8 @@ function Workspace({
   const [limiterFilter, setLimiterFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
   const activeAthletes = useMemo(() => getActiveAthletes(coach.athletes), [coach.athletes]);
   const archivedAthletes = useMemo(() => coach.athletes.filter(isArchivedAthlete), [coach.athletes]);
   const libraryAthletes = showArchived ? coach.athletes : activeAthletes;
@@ -2804,6 +2808,10 @@ function Workspace({
     });
   }, [archetypeFilter, libraryAthletes, librarySearch, librarySort, limiterFilter, ratingFilter, sexFilter, sportFilter]);
   const filtersActive = librarySearch || sexFilter !== "all" || sportFilter !== "all" || archetypeFilter !== "all" || limiterFilter !== "all" || ratingFilter !== "all" || librarySort !== "name-asc" || showArchived;
+  const selectableAthletes = filteredAthletes.filter((athlete) => showArchived ? isArchivedAthlete(athlete) : !isArchivedAthlete(athlete));
+  const selectableAthleteIds = selectableAthletes.map((athlete) => athlete.id);
+  const selectedAthletes = filteredAthletes.filter((athlete) => selectedAthleteIds.includes(athlete.id));
+  const allShownSelected = selectableAthleteIds.length > 0 && selectableAthleteIds.every((id) => selectedAthleteIds.includes(id));
 
   function clearLibraryFilters() {
     setLibrarySearch("");
@@ -2814,6 +2822,45 @@ function Workspace({
     setLimiterFilter("all");
     setRatingFilter("all");
     setShowArchived(false);
+    setSelectionMode(false);
+    setSelectedAthleteIds([]);
+  }
+
+  function cancelSelection(): void {
+    setSelectionMode(false);
+    setSelectedAthleteIds([]);
+  }
+
+  function startSelection(): void {
+    setSelectionMode(true);
+    setSelectedAthleteIds([]);
+  }
+
+  function toggleAthleteSelection(athleteId: string): void {
+    setSelectedAthleteIds((current) => current.includes(athleteId)
+      ? current.filter((id) => id !== athleteId)
+      : [...current, athleteId]);
+  }
+
+  function toggleSelectAllShown(): void {
+    setSelectedAthleteIds(allShownSelected
+      ? selectedAthleteIds.filter((id) => !selectableAthleteIds.includes(id))
+      : Array.from(new Set([...selectedAthleteIds, ...selectableAthleteIds])));
+  }
+
+  function applyBulkArchiveState(archivedAt: string | null): void {
+    const actionAthletes = selectedAthletes.filter((athlete) => archivedAt ? !isArchivedAthlete(athlete) : isArchivedAthlete(athlete));
+    if (!actionAthletes.length) return;
+
+    const actionLabel = archivedAt ? "Archive" : "Restore";
+    const confirmCopy = archivedAt
+      ? `Archive ${actionAthletes.length} athletes?\n\nThey will be hidden from the active Athlete Library, but their saved reports will stay stored.`
+      : `Restore ${actionAthletes.length} athletes to the active Athlete Library?`;
+    if (!window.confirm(confirmCopy)) return;
+
+    onBulkArchiveState(actionAthletes.map((athlete) => athlete.id), archivedAt);
+    cancelSelection();
+    window.setTimeout(() => alert(`${actionAthletes.length} ${actionAthletes.length === 1 ? "athlete" : "athletes"} ${actionLabel.toLowerCase()}d.`), 100);
   }
 
   function exportWorkspaceData() {
@@ -2898,8 +2945,27 @@ function Workspace({
                     </label>
                   ) : null}
                 </div>
-                <button onClick={clearLibraryFilters} disabled={!filtersActive} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100 disabled:opacity-40">Clear Filters</button>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={selectionMode ? cancelSelection : startSelection} disabled={!selectableAthletes.length} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100 disabled:opacity-40">{selectionMode ? "Cancel Selection" : "Select Athletes"}</button>
+                  <button onClick={clearLibraryFilters} disabled={!filtersActive} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100 disabled:opacity-40">Clear Filters</button>
+                </div>
               </div>
+              {selectionMode ? (
+                <div className="mt-4 flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-slate-950">{selectedAthletes.length} selected</p>
+                    <p className="text-xs font-bold text-slate-500">{showArchived ? "Select archived athletes to restore them." : "Select active athletes to archive them."}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={toggleSelectAllShown} disabled={!selectableAthleteIds.length} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">{allShownSelected ? "Clear Shown" : "Select All Shown"}</button>
+                    {showArchived ? (
+                      <button onClick={() => applyBulkArchiveState(null)} disabled={!selectedAthletes.some(isArchivedAthlete)} className="rounded-2xl bg-amber-100 px-4 py-2 text-sm font-black text-amber-900 hover:bg-amber-200 disabled:opacity-40">Restore Selected</button>
+                    ) : (
+                      <button onClick={() => applyBulkArchiveState(new Date().toISOString())} disabled={!selectedAthletes.some((athlete) => !isArchivedAthlete(athlete))} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">Archive Selected</button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -2919,14 +2985,22 @@ function Workspace({
             </div>
           ) : (
             <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-              <div className="hidden grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid">
-                <div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div>
+              <div className={`hidden gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 lg:grid ${selectionMode ? "grid-cols-[0.28fr_1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr]" : "grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr]"}`}>
+                {selectionMode ? <div>Select</div> : null}<div>Name</div><div>Latest Archetype</div><div>Latest Status</div><div>Primary Limiter</div><div>Rating</div><div>Actions</div>
               </div>
               <div className="divide-y divide-slate-100">
                 {filteredAthletes.map((athlete) => {
                   const latest = getLatestReport(athlete);
+                  const canSelectAthlete = selectionMode && (showArchived ? isArchivedAthlete(athlete) : !isArchivedAthlete(athlete));
+                  const isSelected = selectedAthleteIds.includes(athlete.id);
                   return (
-                    <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center">
+                    <div key={athlete.id} className={`grid gap-3 bg-white px-4 py-4 lg:items-center ${selectionMode ? "lg:grid-cols-[0.28fr_1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr]" : "lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr]"}`}>
+                      {selectionMode ? (
+                        <label className={`flex items-center gap-2 text-sm font-black text-slate-700 ${canSelectAthlete ? "" : "opacity-40"}`}>
+                          <input type="checkbox" checked={isSelected} disabled={!canSelectAthlete} onChange={() => toggleAthleteSelection(athlete.id)} className="h-5 w-5 accent-[#1e94d2]" />
+                          <span className="lg:hidden">Select</span>
+                        </label>
+                      ) : null}
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-black text-slate-950">{athlete.name}</p>
@@ -3272,12 +3346,17 @@ export default function AthleteProfilingMVP() {
   }
 
   function setAthleteArchiveState(athleteId: string, archivedAt: string | null): void {
+    setAthletesArchiveState([athleteId], archivedAt);
+  }
+
+  function setAthletesArchiveState(athleteIds: string[], archivedAt: string | null): void {
+    const athleteIdSet = new Set(athleteIds);
     updateCoach((current) => {
       const normalizedCoach = normalizeCoachWorkspace(current);
       if (!normalizedCoach) return current;
       return {
         ...normalizedCoach,
-        athletes: normalizedCoach.athletes.map((athlete) => athlete.id === athleteId ? { ...athlete, archivedAt } : athlete),
+        athletes: normalizedCoach.athletes.map((athlete) => athleteIdSet.has(athlete.id) ? { ...athlete, archivedAt } : athlete),
       };
     });
   }
@@ -3303,6 +3382,7 @@ export default function AthleteProfilingMVP() {
         onCsvImport={() => navigate("csv", { athleteId: null, reportId: null })}
         onOpenAthlete={openAthlete}
         onRestoreAthlete={restoreAthlete}
+        onBulkArchiveState={setAthletesArchiveState}
         onGuide={() => navigate("guide", { athleteId: null, reportId: null })}
         onPrintReport={openPrintReport}
         syncStatus={cloudStatus}
