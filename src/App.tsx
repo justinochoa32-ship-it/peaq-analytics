@@ -1304,61 +1304,60 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
   const meta = [data.sex, data.sport, data.position, data.date].filter(Boolean).join(" - ");
   const bucketHighlights = [...profile.bucketItems].sort(compareScoreDescending).slice(0, 2);
   const metricHighlights = [...profile.scoreList].sort(compareScoreDescending).slice(0, 3);
-  const summaryLines = splitSvgText(getCoachSummaryText(data, profile), 42, 3);
+  const summaryLines = splitSvgText(getCoachSummaryText(data, profile), 44, 4);
   const limiterLines = splitSvgText(profile.primaryLimiter, 18, 2);
   const strengthLines = splitSvgText(profile.greenFlagOne, 18, 2);
-  const nameText = svgLineGroup(nameLines, 110, 318, 92, 'font-family="Inter, Arial, sans-serif" font-size="86" font-weight="900" fill="#ffffff"');
-  const summaryText = svgLineGroup(summaryLines, 110, 1082, 40, 'font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#334155"');
-  const limiterText = svgLineGroup(limiterLines, 150, 750, 34, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
-  const strengthText = svgLineGroup(strengthLines, 595, 750, 34, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
+  const nameText = svgLineGroup(nameLines, 110, 265, 82, 'font-family="Inter, Arial, sans-serif" font-size="80" font-weight="900" fill="#ffffff"');
+  const summaryText = svgLineGroup(summaryLines, 110, 885, 38, 'font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#334155"');
+  const limiterText = svgLineGroup(limiterLines, 150, 630, 38, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
+  const strengthText = svgLineGroup(strengthLines, 595, 630, 38, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
 
   const bucketCards = bucketHighlights.map((bucket, index) => {
     const x = 110 + index * 435;
     return `
-      <rect x="${x}" y="1270" width="395" height="230" rx="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="${x + 34}" y="1345" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="3">${escapeSvgText(bucket.label.toUpperCase())}</text>
-      <text x="${x + 34}" y="1424" font-family="Inter, Arial, sans-serif" font-size="74" font-weight="900" fill="#020617">${shareScoreText(bucket.score)}</text>
-      ${svgScoreBar(x + 34, 1464, 310, bucket.score)}
+      <rect x="${x}" y="1120" width="395" height="230" rx="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="${x + 34}" y="1195" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="3">${escapeSvgText(bucket.label.toUpperCase())}</text>
+      <text x="${x + 34}" y="1274" font-family="Inter, Arial, sans-serif" font-size="74" font-weight="900" fill="#020617">${shareScoreText(bucket.score)}</text>
+      ${svgScoreBar(x + 34, 1314, 310, bucket.score)}
     `;
   }).join("");
 
   const metricRows = metricHighlights.map((item, index) => {
-    const y = 1576 + index * 84;
+    const y = 1498 + index * 104;
     return `
-      <text x="126" y="${y}" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="900" fill="#020617">${escapeSvgText(item.label)}</text>
-      <text x="126" y="${y + 34}" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="800" fill="#64748b">${escapeSvgText(item.display)}</text>
-      <text x="845" y="${y + 15}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="900" fill="#020617">${shareScoreText(item.score)}</text>
-      ${svgScoreBar(885, y - 15, 90, item.score)}
+      <text x="126" y="${y}" font-family="Inter, Arial, sans-serif" font-size="29" font-weight="900" fill="#020617">${escapeSvgText(item.label)}</text>
+      <text x="126" y="${y + 38}" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800" fill="#64748b">${escapeSvgText(item.display)}</text>
+      <text x="805" y="${y + 18}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="52" font-weight="900" fill="#020617">${shareScoreText(item.score)}</text>
+      ${svgScoreBar(860, y - 12, 115, item.score)}
     `;
   }).join("");
 
   return `
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
       <rect width="1080" height="1920" fill="#f1f5f9"/>
-      <rect x="70" y="70" width="940" height="540" rx="64" fill="#231f20"/>
+      <rect x="70" y="70" width="940" height="430" rx="64" fill="#231f20"/>
       <text x="110" y="155" font-family="Inter, Arial, sans-serif" font-size="40" font-weight="900" fill="#ffffff" letter-spacing="3">PEAQ</text>
-      <text x="230" y="155" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#8ed5f5" letter-spacing="8">PROFILE</text>
+      <text x="252" y="155" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#8ed5f5" letter-spacing="8">PROFILE</text>
       <rect x="770" y="125" width="170" height="170" rx="34" fill="#ffffff"/>
       <text x="855" y="178" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">OVERALL</text>
       <text x="855" y="258" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="86" font-weight="900" fill="#020617">${shareScoreText(profile.overallScore)}</text>
       ${nameText}
-      <text x="110" y="528" font-family="Inter, Arial, sans-serif" font-size="33" font-weight="800" fill="#ffffff" opacity="0.65">${escapeSvgText(meta || "PEAQ Profile")}</text>
-      <rect x="110" y="674" width="390" height="210" rx="34" fill="#ffffff"/>
-      <text x="150" y="728" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">PRIMARY LIMITER</text>
+      <text x="110" y="430" font-family="Inter, Arial, sans-serif" font-size="31" font-weight="800" fill="#ffffff" opacity="0.65">${escapeSvgText(meta || "PEAQ Profile")}</text>
+      <rect x="110" y="555" width="390" height="190" rx="34" fill="#ffffff"/>
+      <text x="150" y="602" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">PRIMARY LIMITER</text>
       ${limiterText}
-      <rect x="555" y="674" width="390" height="210" rx="34" fill="#ffffff"/>
-      <text x="595" y="728" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">CURRENT STRENGTH</text>
+      <rect x="555" y="555" width="390" height="190" rx="34" fill="#ffffff"/>
+      <text x="595" y="602" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">CURRENT STRENGTH</text>
       ${strengthText}
-      <rect x="70" y="950" width="940" height="240" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="110" y="1034" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">COACH SUMMARY</text>
+      <rect x="70" y="805" width="940" height="230" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="110" y="858" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">COACH SUMMARY</text>
       ${summaryText}
-      <text x="110" y="1236" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TOP PROFILE BUCKETS</text>
+      <text x="110" y="1086" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TOP PROFILE BUCKETS</text>
       ${bucketCards}
-      <rect x="70" y="1538" width="940" height="290" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="110" y="1610" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TESTED METRICS</text>
+      <rect x="70" y="1400" width="940" height="365" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="110" y="1455" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TESTED METRICS</text>
       ${metricRows}
-      <text x="845" y="1866" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#94a3b8" letter-spacing="4">POWERED BY</text>
-      <text x="875" y="1866" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#1e94d2" letter-spacing="4">PEAQ ANALYTICS</text>
+      <text x="540" y="1858" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#94a3b8" letter-spacing="4">POWERED BY  <tspan fill="#1e94d2">PEAQ ANALYTICS</tspan></text>
     </svg>
   `;
 }
