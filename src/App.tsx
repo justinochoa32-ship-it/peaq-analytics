@@ -126,6 +126,7 @@ interface AthleteProfileRecord {
   position: string;
   height: string;
   bodyweight: string;
+  archivedAt: string | null;
   reports: SavedReport[];
 }
 
@@ -225,6 +226,7 @@ interface CloudAthleteRow {
   position: string | null;
   height: number | null;
   bodyweight: number | null;
+  archived_at: string | null;
 }
 
 interface CloudReportRow {
@@ -502,6 +504,7 @@ function normalizeAthleteProfile(athlete: Partial<AthleteProfileRecord>, index: 
     position: athlete.position || latestData.position || "",
     height: athlete.height || latestData.height || "",
     bodyweight: athlete.bodyweight || latestData.bodyweight || "",
+    archivedAt: athlete.archivedAt || null,
     reports,
   };
 }
@@ -510,6 +513,14 @@ function normalizeCoachWorkspace(coach: CoachWorkspace | null): CoachWorkspace |
   if (!coach || !Array.isArray(coach.athletes)) return coach;
   const usedIds = new Set<string>();
   return { ...coach, athletes: coach.athletes.map((athlete, index) => normalizeAthleteProfile(athlete, index, usedIds)) };
+}
+
+function isArchivedAthlete(athlete: Pick<AthleteProfileRecord, "archivedAt">): boolean {
+  return Boolean(athlete.archivedAt);
+}
+
+function getActiveAthletes(athletes: AthleteProfileRecord[]): AthleteProfileRecord[] {
+  return athletes.filter((athlete) => !isArchivedAthlete(athlete));
 }
 
 function getAthleteIdentity(athlete: Partial<AthleteProfileRecord> | null | undefined): AthleteIdentity {
@@ -538,11 +549,12 @@ function getAthleteMatchResult(athletes: AthleteProfileRecord[], data: AthleteDa
     if (preferredAthlete) return { status: "matched", athlete: preferredAthlete, message: "Existing athlete profile selected." };
   }
 
+  const activeAthletes = getActiveAthletes(athletes);
   const reportIdentity = getReportIdentity(data);
   if (!reportIdentity.name) return { status: "new", athlete: null, message: "New athlete profile." };
 
   if (reportIdentity.dob) {
-    const matches = athletes.filter((athlete) => {
+    const matches = activeAthletes.filter((athlete) => {
       const athleteIdentity = getAthleteIdentity(athlete);
       return athleteIdentity.name === reportIdentity.name && athleteIdentity.dob === reportIdentity.dob;
     });
@@ -551,7 +563,7 @@ function getAthleteMatchResult(athletes: AthleteProfileRecord[], data: AthleteDa
     return { status: "new", athlete: null, message: "New athlete profile." };
   }
 
-  const sameNameAthletes = athletes.filter((athlete) => getAthleteIdentity(athlete).name === reportIdentity.name);
+  const sameNameAthletes = activeAthletes.filter((athlete) => getAthleteIdentity(athlete).name === reportIdentity.name);
   if (!reportIdentity.sex || !reportIdentity.sport || !reportIdentity.position) {
     return sameNameAthletes.length
       ? { status: "ambiguous", athlete: null, message: "Needs review: same name exists and DOB is missing." }
@@ -578,7 +590,7 @@ function findExactNameDobAthlete(athletes: AthleteProfileRecord[], data: Athlete
   const reportIdentity = getReportIdentity(data);
   if (!reportIdentity.name || !reportIdentity.dob) return null;
 
-  const matches = athletes.filter((athlete) => {
+  const matches = getActiveAthletes(athletes).filter((athlete) => {
     const athleteIdentity = getAthleteIdentity(athlete);
     return athlete.id !== excludedAthleteId
       && athleteIdentity.name === reportIdentity.name
@@ -598,6 +610,7 @@ function buildAthleteBase(data: AthleteData, athleteId: string, existingAthlete:
     position: data.position || existingAthlete?.position || "",
     height: data.height || existingAthlete?.height || "",
     bodyweight: data.bodyweight || existingAthlete?.bodyweight || "",
+    archivedAt: existingAthlete?.archivedAt || null,
     reports: [],
   };
 }
@@ -1801,7 +1814,7 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
     supabaseFetch<CloudProfileRow[]>("/rest/v1/profiles?select=id,email,coach_name,organization&limit=1", {
       accessToken: session.accessToken,
     }),
-    supabaseFetch<CloudAthleteRow[]>("/rest/v1/athletes?select=id,client_id,name,dob,sex,sport,position,height,bodyweight&order=updated_at.desc", {
+    supabaseFetch<CloudAthleteRow[]>("/rest/v1/athletes?select=id,client_id,name,dob,sex,sport,position,height,bodyweight,archived_at&order=updated_at.desc", {
       accessToken: session.accessToken,
     }),
     supabaseFetch<CloudReportRow[]>("/rest/v1/reports?select=id,client_id,athlete_id,testing_date,raw_inputs,calculated_profile,overall_score,profile_rating,archetype,status,primary_limiter,secondary_limiter,saved_at,corrected_at,correction_count,correction_history&order=testing_date.desc", {
@@ -1826,6 +1839,7 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
     position: row.position || "",
     height: row.height === null || row.height === undefined ? "" : String(row.height),
     bodyweight: row.bodyweight === null || row.bodyweight === undefined ? "" : String(row.bodyweight),
+    archivedAt: row.archived_at || null,
     reports: (reportsByAthleteId.get(row.id) || []).sort((a, b) => b.date.localeCompare(a.date)),
   }));
 
@@ -1872,6 +1886,7 @@ async function saveCoachToSupabase(coach: CoachWorkspace, session: SupabaseSessi
     position: athlete.position || null,
     height: getCloudNumber(athlete.height),
     bodyweight: getCloudNumber(athlete.bodyweight),
+    archived_at: athlete.archivedAt || null,
   }));
 
   const savedAthletes = await supabaseFetch<Array<{ id: string; client_id: string }>>("/rest/v1/athletes?on_conflict=coach_id,client_id&select=id,client_id", {
@@ -2173,6 +2188,7 @@ function CsvImport({
   const [csvText, setCsvText] = useState(templateHeaders.join(",") + "\n");
   const [activeFixRowId, setActiveFixRowId] = useState<string | null>(null);
   const rows = useMemo(() => parseCsv(csvText), [csvText]);
+  const activeAthletes = useMemo(() => getActiveAthletes(coach.athletes), [coach.athletes]);
   const reviewedRows = useMemo(() => {
     const preparedRows = rows.map((row) => {
       const data = csvRowToAthlete(row);
@@ -2180,7 +2196,7 @@ function CsvImport({
     });
 
     return preparedRows.map((item) => {
-      let review = getImportReview(coach.athletes, item.data, item.upload);
+      let review = getImportReview(activeAthletes, item.data, item.upload);
       const identity = getReportIdentity(item.data);
       const duplicateMissingDobRows = preparedRows.filter((otherItem) => {
         const otherIdentity = getReportIdentity(otherItem.data);
@@ -2191,7 +2207,7 @@ function CsvImport({
       }
       return { ...item, review, canSave: review.canSave };
     });
-  }, [coach.athletes, rows]);
+  }, [activeAthletes, rows]);
 
   const readyRows = reviewedRows.filter((item) => item.canSave);
   const issueCount = reviewedRows.filter((item) => !item.canSave).length;
@@ -2381,24 +2397,31 @@ function AthleteProfile({
   athlete,
   onBack,
   onRunReport,
+  onArchive,
+  onRestore,
   onOpenReport,
   onPrintComparison,
 }: {
   athlete: AthleteProfileRecord;
   onBack: () => void;
   onRunReport: () => void;
+  onArchive: () => void;
+  onRestore: () => void;
   onOpenReport: (report: SavedReport) => void;
   onPrintComparison: (reportA: SavedReport, reportB: SavedReport) => void;
 }) {
+  const archived = isArchivedAthlete(athlete);
   const latest = athlete.reports[0];
   if (!latest) {
     return (
       <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
         <div className="mx-auto max-w-7xl space-y-6">
           <BrandedPageHeader eyebrow="Athlete Profile" title={athlete.name} copy={getAthleteIdentityLine(athlete)}>
-            <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
+            {archived ? <button onClick={onRestore} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Restore Athlete</button> : <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>}
+            {!archived ? <button onClick={onArchive} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Archive Athlete</button> : null}
             <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
           </BrandedPageHeader>
+          {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
           <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
             <p className="text-2xl font-black text-slate-950">No saved reports yet.</p>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a complete CSV row for this athlete before reviewing scores, limiters, or report history.</p>
@@ -2412,9 +2435,11 @@ function AthleteProfile({
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <BrandedPageHeader eyebrow="Athlete Profile" title={athlete.name} copy={getAthleteIdentityLine(athlete)}>
-          <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
+          {archived ? <button onClick={onRestore} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Restore Athlete</button> : <button onClick={onRunReport} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>}
+          {!archived ? <button onClick={onArchive} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Archive Athlete</button> : null}
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
         </BrandedPageHeader>
+        {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
         <ReportComparison reports={athlete.reports} onPrintComparison={onPrintComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
@@ -2627,6 +2652,7 @@ function Workspace({
   onRunReport,
   onCsvImport,
   onOpenAthlete,
+  onRestoreAthlete,
   onGuide,
   onPrintReport,
   syncStatus,
@@ -2636,6 +2662,7 @@ function Workspace({
   onRunReport: () => void;
   onCsvImport: () => void;
   onOpenAthlete: (id: string) => void;
+  onRestoreAthlete: (id: string) => void;
   onGuide: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
   syncStatus?: string;
@@ -2647,18 +2674,22 @@ function Workspace({
   const [archetypeFilter, setArchetypeFilter] = useState("all");
   const [limiterFilter, setLimiterFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
-  const totalReports = coach.athletes.reduce((sum, athlete) => sum + athlete.reports.length, 0);
-  const latestReports = coach.athletes.map((athlete) => getLatestReport(athlete)).filter((report): report is SavedReport => Boolean(report));
+  const [showArchived, setShowArchived] = useState(false);
+  const activeAthletes = useMemo(() => getActiveAthletes(coach.athletes), [coach.athletes]);
+  const archivedAthletes = useMemo(() => coach.athletes.filter(isArchivedAthlete), [coach.athletes]);
+  const libraryAthletes = showArchived ? coach.athletes : activeAthletes;
+  const totalReports = activeAthletes.reduce((sum, athlete) => sum + athlete.reports.length, 0);
+  const latestReports = activeAthletes.map((athlete) => getLatestReport(athlete)).filter((report): report is SavedReport => Boolean(report));
   const avgRating = latestReports.length ? latestReports.reduce((sum, report) => sum + (report.rating || 0), 0) / latestReports.length : null;
   const filterOptions = useMemo(() => ({
-    sex: uniqueOptions(coach.athletes.map((athlete) => athlete.sex)),
-    sport: uniqueOptions(coach.athletes.map((athlete) => athlete.sport)),
-    archetype: uniqueOptions(coach.athletes.map((athlete) => getLatestReport(athlete)?.archetype)),
-    limiter: uniqueOptions(coach.athletes.map((athlete) => getLatestReport(athlete)?.primaryLimiter)),
-  }), [coach.athletes]);
+    sex: uniqueOptions(libraryAthletes.map((athlete) => athlete.sex)),
+    sport: uniqueOptions(libraryAthletes.map((athlete) => athlete.sport)),
+    archetype: uniqueOptions(libraryAthletes.map((athlete) => getLatestReport(athlete)?.archetype)),
+    limiter: uniqueOptions(libraryAthletes.map((athlete) => getLatestReport(athlete)?.primaryLimiter)),
+  }), [libraryAthletes]);
   const filteredAthletes = useMemo(() => {
     const search = librarySearch.trim().toLowerCase();
-    const visible = coach.athletes.filter((athlete) => {
+    const visible = libraryAthletes.filter((athlete) => {
       const latest = getLatestReport(athlete);
       const matchesSearch = !search || athlete.name.toLowerCase().includes(search);
       const matchesSex = sexFilter === "all" || athlete.sex === sexFilter;
@@ -2679,8 +2710,8 @@ function Workspace({
       if (librarySort === "date-asc") return String(latestA?.date || "").localeCompare(String(latestB?.date || ""));
       return a.name.localeCompare(b.name);
     });
-  }, [archetypeFilter, coach.athletes, librarySearch, librarySort, limiterFilter, ratingFilter, sexFilter, sportFilter]);
-  const filtersActive = librarySearch || sexFilter !== "all" || sportFilter !== "all" || archetypeFilter !== "all" || limiterFilter !== "all" || ratingFilter !== "all" || librarySort !== "name-asc";
+  }, [archetypeFilter, libraryAthletes, librarySearch, librarySort, limiterFilter, ratingFilter, sexFilter, sportFilter]);
+  const filtersActive = librarySearch || sexFilter !== "all" || sportFilter !== "all" || archetypeFilter !== "all" || limiterFilter !== "all" || ratingFilter !== "all" || librarySort !== "name-asc" || showArchived;
 
   function clearLibraryFilters() {
     setLibrarySearch("");
@@ -2690,6 +2721,7 @@ function Workspace({
     setArchetypeFilter("all");
     setLimiterFilter("all");
     setRatingFilter("all");
+    setShowArchived(false);
   }
 
   function exportWorkspaceData() {
@@ -2731,7 +2763,7 @@ function Workspace({
             </div>
           </div>
         </section>
-        <section className="grid gap-4 md:grid-cols-5"><SummaryCard label="Athletes" value={coach.athletes.length} helper="Athlete profiles" /><SummaryCard label="All Reports" value={totalReports} helper="Saved testing dates" /><SummaryCard label="Recent Reports" value={latestReports.length} helper="Current snapshots" /><SummaryCard label="Avg Rating" value={avgRating ? avgRating.toFixed(1) : "—"} helper="Latest reports only" /><button onClick={onRunReport} className="rounded-3xl bg-[#1e94d2] p-5 text-left text-white shadow-sm hover:bg-[#167bb0]"><p className="text-xs font-black uppercase tracking-wide text-white/70">New Report</p><p className="mt-2 text-2xl font-black tracking-tight">Run Report</p><p className="mt-1 text-sm font-semibold text-white/75">Start a fresh athlete profile</p></button></section>
+        <section className="grid gap-4 md:grid-cols-5"><SummaryCard label="Athletes" value={activeAthletes.length} helper={archivedAthletes.length ? `${archivedAthletes.length} archived` : "Active profiles"} /><SummaryCard label="All Reports" value={totalReports} helper="Active testing dates" /><SummaryCard label="Recent Reports" value={latestReports.length} helper="Current snapshots" /><SummaryCard label="Avg Rating" value={avgRating ? avgRating.toFixed(1) : "—"} helper="Latest reports only" /><button onClick={onRunReport} className="rounded-3xl bg-[#1e94d2] p-5 text-left text-white shadow-sm hover:bg-[#167bb0]"><p className="text-xs font-black uppercase tracking-wide text-white/70">New Report</p><p className="mt-2 text-2xl font-black tracking-tight">Run Report</p><p className="mt-1 text-sm font-semibold text-white/75">Start a fresh athlete profile</p></button></section>
         <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-black uppercase tracking-wide text-slate-500">Workspace Backup</p>
@@ -2765,7 +2797,15 @@ function Workspace({
                 <SelectField label="Star Rating" value={ratingFilter} onChange={setRatingFilter}>{starRatingOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</SelectField>
               </div>
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-black text-slate-600">Showing {filteredAthletes.length} of {coach.athletes.length} athletes</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm font-black text-slate-600">Showing {filteredAthletes.length} of {libraryAthletes.length} {showArchived ? "total" : "active"} athletes</p>
+                  {archivedAthletes.length ? (
+                    <label className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm">
+                      <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} className="h-4 w-4 accent-[#1e94d2]" />
+                      Show archived
+                    </label>
+                  ) : null}
+                </div>
                 <button onClick={clearLibraryFilters} disabled={!filtersActive} className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-100 disabled:opacity-40">Clear Filters</button>
               </div>
             </div>
@@ -2782,8 +2822,8 @@ function Workspace({
             </div>
           ) : filteredAthletes.length === 0 ? (
             <div className="mt-5 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
-              <p className="text-2xl font-black text-slate-950">No matches found.</p>
-              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Adjust the search or filters to show more athletes.</p>
+              <p className="text-2xl font-black text-slate-950">{activeAthletes.length === 0 && archivedAthletes.length > 0 && !showArchived ? "No active athletes." : "No matches found."}</p>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">{activeAthletes.length === 0 && archivedAthletes.length > 0 && !showArchived ? "Turn on Show archived to view or restore hidden athlete profiles." : "Adjust the search or filters to show more athletes."}</p>
             </div>
           ) : (
             <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
@@ -2796,7 +2836,10 @@ function Workspace({
                   return (
                     <div key={athlete.id} className="grid gap-3 bg-white px-4 py-4 lg:grid-cols-[1.2fr_1.15fr_1.15fr_1fr_0.8fr_1fr] lg:items-center">
                       <div>
-                        <p className="font-black text-slate-950">{athlete.name}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-black text-slate-950">{athlete.name}</p>
+                          {isArchivedAthlete(athlete) ? <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-900">Archived</span> : null}
+                        </div>
                         <p className="mt-1 text-xs font-semibold text-slate-500">{getAthleteIdentityLine(athlete)}</p>
                       </div>
                       <div className="text-sm font-black text-slate-800">{latest?.archetype || "No reports yet"}</div>
@@ -2805,6 +2848,7 @@ function Workspace({
                       <div><StarRating value={latest?.rating} /></div>
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                         <button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button>
+                        {isArchivedAthlete(athlete) ? <button onClick={() => onRestoreAthlete(athlete.id)} className="rounded-xl bg-amber-100 px-3 py-2 text-xs font-black text-amber-900 hover:bg-amber-200">Restore</button> : null}
                         <button onClick={() => latest && onPrintReport(latest.data, latest.profile)} disabled={!latest} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Print Latest</button>
                       </div>
                     </div>
@@ -3100,6 +3144,29 @@ export default function AthleteProfilingMVP() {
     window.setTimeout(() => alert(`${entries.length} ${reportLabel} saved to Athlete Library.`), 100);
   }
 
+  function setAthleteArchiveState(athleteId: string, archivedAt: string | null): void {
+    updateCoach((current) => {
+      const normalizedCoach = normalizeCoachWorkspace(current);
+      if (!normalizedCoach) return current;
+      return {
+        ...normalizedCoach,
+        athletes: normalizedCoach.athletes.map((athlete) => athlete.id === athleteId ? { ...athlete, archivedAt } : athlete),
+      };
+    });
+  }
+
+  function archiveAthlete(athlete: AthleteProfileRecord): void {
+    if (!window.confirm(`Archive ${athlete.name}?\n\nThis hides the athlete and all saved reports from the active Athlete Library. You can restore the profile later.`)) return;
+    setAthleteArchiveState(athlete.id, new Date().toISOString());
+    goWorkspace();
+    window.setTimeout(() => alert(`${athlete.name} archived. Turn on Show archived to restore this profile later.`), 100);
+  }
+
+  function restoreAthlete(athleteId: string): void {
+    setAthleteArchiveState(athleteId, null);
+    window.setTimeout(() => alert("Athlete restored to the active library."), 100);
+  }
+
   function renderWorkspace(workspace: CoachWorkspace) {
     return (
       <Workspace
@@ -3108,6 +3175,7 @@ export default function AthleteProfilingMVP() {
         onRunReport={startBlankReport}
         onCsvImport={() => navigate("csv", { athleteId: null, reportId: null })}
         onOpenAthlete={openAthlete}
+        onRestoreAthlete={restoreAthlete}
         onGuide={() => navigate("guide", { athleteId: null, reportId: null })}
         onPrintReport={openPrintReport}
         syncStatus={cloudStatus}
@@ -3136,7 +3204,7 @@ export default function AthleteProfilingMVP() {
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return renderWorkspace(coach);
-    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} />;
+    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);

@@ -31,8 +31,11 @@ Run the migrations in order in the Supabase SQL Editor:
 
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_client_ids_for_beta_sync.sql`
+3. `supabase/migrations/003_archive_athletes.sql`
 
 The second migration adds `client_id` fields so the current app can preserve existing local athlete/report IDs while Supabase keeps UUID primary keys internally.
+
+The third migration adds `archived_at` to keep athlete cleanup reversible during beta.
 
 ## Current Status
 
