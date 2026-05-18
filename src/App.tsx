@@ -8,6 +8,7 @@ import {
   supabaseConfig,
   supabaseFetch,
   type SupabaseSession,
+  updateCoachPassword,
 } from "./supabaseClient";
 
 type Sex = "Male" | "Female";
@@ -164,6 +165,12 @@ interface AppHistoryState {
   selectedReportId: string | null;
 }
 
+interface PasswordRecoverySession {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number | null;
+}
+
 interface ComparisonMetric {
   key: ComparisonKey;
   label: string;
@@ -318,6 +325,7 @@ const templateHeaders: AthleteDataKey[] = [
 
 const coachStorageKey = "peaq-analytics-coach-workspace";
 const supabaseSessionStorageKey = "peaq-analytics-supabase-session";
+const productionAppUrl = "https://app.peaqanalytics.com";
 
 const brandAssets = {
   wordmark: "/assets/brand/peaq-name.png",
@@ -445,6 +453,37 @@ function saveStoredSupabaseSession(session: SupabaseSession | null): void {
   } catch {
     // Local session storage is best-effort; the app remains usable without it.
   }
+}
+
+function getPasswordResetRedirectUrl(): string {
+  if (typeof window === "undefined") return productionAppUrl;
+  if (window.location.hostname === "peaq-analytics.vercel.app") return productionAppUrl;
+  return window.location.origin;
+}
+
+function getPasswordRecoverySessionFromUrl(): PasswordRecoverySession | null {
+  if (typeof window === "undefined" || !window.location.hash) return null;
+
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const type = params.get("type");
+  const accessToken = params.get("access_token") || "";
+  const refreshToken = params.get("refresh_token") || "";
+  if (type !== "recovery" || !accessToken || !refreshToken) return null;
+
+  const expiresAtSeconds = Number(params.get("expires_at"));
+  const expiresInSeconds = Number(params.get("expires_in"));
+  const expiresAt = Number.isFinite(expiresAtSeconds) && expiresAtSeconds > 0
+    ? expiresAtSeconds * 1000
+    : Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+      ? Date.now() + expiresInSeconds * 1000
+      : null;
+
+  return { accessToken, refreshToken, expiresAt };
+}
+
+function clearPasswordRecoveryUrl(): void {
+  if (typeof window === "undefined") return;
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
 }
 
 function slugify(value: string | number | null | undefined): string {
@@ -2646,6 +2685,59 @@ function AuthCard({
   );
 }
 
+function PasswordResetCard({
+  authMessage,
+  onUpdatePassword,
+  onCancel,
+}: {
+  authMessage: string;
+  onUpdatePassword: (password: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const passwordsMatch = password === confirmPassword;
+  const canSubmit = password.length >= 6 && passwordsMatch;
+
+  async function submit(): Promise<void> {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      await onUpdatePassword(password);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl items-center gap-8 lg:grid-cols-[1fr_0.9fr]">
+        <section className="relative overflow-hidden rounded-[2rem] bg-[#231f20] p-8 text-white shadow-sm md:p-10">
+          <BrandMark variant="wordmark" tone="light" className="h-10 max-w-[180px]" />
+          <h1 className="mt-8 max-w-3xl text-4xl font-black tracking-tight md:text-6xl">Reset your PEAQ password.</h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-white/70">Create a new password to return to your protected coach workspace.</p>
+        </section>
+        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div className="flex justify-center py-4">
+            <BrandMark variant="symbol" className="h-24 w-24 md:h-32 md:w-32" />
+          </div>
+          <h2 className="mt-6 text-3xl font-black tracking-tight">Set New Password</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-500">Enter a new password for your PEAQ account.</p>
+          {authMessage ? <div className="mt-5 rounded-2xl bg-slate-100 p-4 text-sm font-bold text-slate-700">{authMessage}</div> : null}
+          <div className="mt-6 space-y-4">
+            <Field label="New Password" type="password" value={password} onChange={setPassword} />
+            <Field label="Confirm Password" type="password" value={confirmPassword} onChange={setConfirmPassword} />
+            {!passwordsMatch ? <p className="text-sm font-bold text-rose-600">Passwords do not match.</p> : null}
+            <button onClick={submit} disabled={submitting || !canSubmit} className="w-full rounded-2xl bg-[#1e94d2] px-5 py-4 text-sm font-black text-white hover:bg-[#167bb0] disabled:opacity-50">{submitting ? "Updating..." : "Update Password"}</button>
+            <button onClick={onCancel} disabled={submitting} className="w-full rounded-2xl bg-slate-100 px-5 py-4 text-sm font-black text-slate-700 hover:bg-slate-200 disabled:opacity-50">Back to Sign In</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function Workspace({
   coach,
   onLogout,
@@ -2878,6 +2970,7 @@ export default function AthleteProfilingMVP() {
   const [printData, setPrintData] = useState<AthleteData | null>(null);
   const [printProfile, setPrintProfile] = useState<Profile | null>(null);
   const [progressPrint, setProgressPrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState<PasswordRecoverySession | null>(null);
 
   function navigate(nextView: ViewName, options: { athleteId?: string | null; reportId?: string | null; replace?: boolean } = {}): void {
     const hasAthleteId = Object.prototype.hasOwnProperty.call(options, "athleteId");
@@ -2905,6 +2998,19 @@ export default function AthleteProfilingMVP() {
   useEffect(() => {
     saveStoredSupabaseSession(authSession);
   }, [authSession]);
+
+  useEffect(() => {
+    const recoverySession = getPasswordRecoverySessionFromUrl();
+    if (!recoverySession) return;
+
+    setPasswordRecovery(recoverySession);
+    setAuthSession(null);
+    setCoach(null);
+    setCloudLoadedForUser(null);
+    setView("auth");
+    setAuthMessage("Enter a new password to finish resetting your PEAQ account.");
+    clearPasswordRecoveryUrl();
+  }, []);
 
   useEffect(() => {
     if (!supabaseConfig.isConfigured || !authSession || cloudLoadedForUser === authSession.user.id) return;
@@ -3040,12 +3146,33 @@ export default function AthleteProfilingMVP() {
   async function handlePasswordReset(email: string): Promise<void> {
     setAuthMessage("Sending password reset email...");
     try {
-      await sendPasswordReset(email.trim());
-      setAuthMessage("Password reset email sent.");
+      await sendPasswordReset(email.trim(), getPasswordResetRedirectUrl());
+      setAuthMessage("Password reset email sent. Use the email link to set a new password.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not send password reset email.";
       setAuthMessage(`Password reset failed: ${message}`);
     }
+  }
+
+  async function handlePasswordUpdate(password: string): Promise<void> {
+    if (!passwordRecovery) return;
+    setAuthMessage("Updating password...");
+    try {
+      await updateCoachPassword(passwordRecovery.accessToken, password);
+      setPasswordRecovery(null);
+      setAuthSession(null);
+      setCoach(null);
+      saveStoredSupabaseSession(null);
+      setAuthMessage("Password updated. Sign in with your new password.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not update password.";
+      setAuthMessage(`Password update failed: ${message}`);
+    }
+  }
+
+  function cancelPasswordUpdate(): void {
+    setPasswordRecovery(null);
+    setAuthMessage("Sign in to return to your workspace.");
   }
 
   async function handleLogout(): Promise<void> {
@@ -3181,6 +3308,10 @@ export default function AthleteProfilingMVP() {
         syncStatus={cloudStatus}
       />
     );
+  }
+
+  if (passwordRecovery) {
+    return <PasswordResetCard authMessage={authMessage} onUpdatePassword={handlePasswordUpdate} onCancel={cancelPasswordUpdate} />;
   }
 
   if (supabaseConfig.isConfigured && authSession && !coach) {
