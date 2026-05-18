@@ -125,9 +125,18 @@ export async function signOutCoach(accessToken: string): Promise<void> {
   });
 }
 
-export async function sendPasswordReset(email: string): Promise<void> {
-  await supabaseFetch("/auth/v1/recover", {
+export async function sendPasswordReset(email: string, redirectTo?: string): Promise<void> {
+  const redirectQuery = redirectTo ? `?redirect_to=${encodeURIComponent(redirectTo)}` : "";
+  await supabaseFetch(`/auth/v1/recover${redirectQuery}`, {
     method: "POST",
     body: JSON.stringify({ email }),
+  });
+}
+
+export async function updateCoachPassword(accessToken: string, password: string): Promise<void> {
+  await supabaseFetch("/auth/v1/user", {
+    method: "PUT",
+    accessToken,
+    body: JSON.stringify({ password }),
   });
 }
