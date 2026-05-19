@@ -3970,24 +3970,22 @@ function Workspace({
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-[2rem] bg-[#231f20] p-6 text-white shadow-sm md:p-8">
-          <div className="grid gap-7 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+          <div className="flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-3">
                 <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
-                <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</span>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Coach: {getCoachDisplayName(coach)}</span>
+                <button onClick={onCoachProfile} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Account Profile</button>
                 {syncStatus ? <span className="rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span> : null}
               </div>
-              <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-end">
-                <h1 className="text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1>
-                <button onClick={onCoachProfile} className="w-fit rounded-2xl border border-white/20 px-4 py-2 text-sm font-black text-white hover:bg-white/10">Edit Organization / Account</button>
-              </div>
+              <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization || "PEAQ Analytics"}</h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">PEAQ Analytics workspace.</p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <button onClick={onRunReport} className="whitespace-nowrap rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
-              <button onClick={onCsvImport} className="whitespace-nowrap rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Import CSV</button>
-              <button onClick={onGuide} className="whitespace-nowrap rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Scoring Guide</button>
-              <button onClick={onLogout} className="whitespace-nowrap rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Log Out</button>
+            <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:min-w-[620px] xl:grid-cols-4">
+              <button onClick={onRunReport} className="whitespace-nowrap rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-950 hover:bg-white/90">Run New Report</button>
+              <button onClick={onCsvImport} className="whitespace-nowrap rounded-2xl border border-white/20 px-4 py-3 text-sm font-black text-white hover:bg-white/10">Import CSV</button>
+              <button onClick={onGuide} className="whitespace-nowrap rounded-2xl border border-white/20 px-4 py-3 text-sm font-black text-white hover:bg-white/10">Scoring Guide</button>
+              <button onClick={onLogout} className="whitespace-nowrap rounded-2xl border border-white/20 px-4 py-3 text-sm font-black text-white hover:bg-white/10">Log Out</button>
             </div>
           </div>
         </section>
