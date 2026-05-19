@@ -1312,9 +1312,11 @@ function svgStarRating(x: number, y: number, rating: NullableNumber | undefined)
 function buildShareCardSvg(data: AthleteData, profile: Profile): string {
   const athleteName = data.name || "Athlete Name";
   const nameLines = splitSvgText(athleteName, 16, 2);
-  const meta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" - ");
+  const meta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
   const statusTone = shareStatusTone(profile.status);
-  const nameText = svgLineGroup(nameLines, 105, 220, 64, 'font-family="Inter, Arial, sans-serif" font-size="64" font-weight="900" fill="#ffffff"');
+  const statusLabel = profile.status || "No Status";
+  const statusBadgeWidth = Math.min(330, Math.max(170, statusLabel.length * 12 + 48));
+  const nameText = svgLineGroup(nameLines, 78, 210, 58, 'font-family="Inter, Arial, sans-serif" font-size="60" font-weight="900" fill="#ffffff"');
   const archetypeLines = splitSvgText(profile.archetype, 24, 2);
   const limiterCards = [
     { label: "Primary Limiter", value: profile.primaryLimiter },
@@ -1322,72 +1324,71 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
     { label: "Current Strength", value: profile.greenFlagOne },
     { label: "Current Strength", value: profile.greenFlagTwo },
   ].map((item, index) => {
-    const x = index % 2 === 0 ? 70 : 555;
-    const y = index < 2 ? 668 : 790;
+    const x = index % 2 === 0 ? 68 : 542;
+    const y = index < 2 ? 648 : 768;
     const lines = splitSvgText(item.value, 22, 2);
     return `
-      <rect x="${x}" y="${y}" width="455" height="98" rx="24" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
-      <text x="${x + 28}" y="${y + 38}" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#64748b" letter-spacing="3">${escapeSvgText(item.label.toUpperCase())}</text>
-      ${svgLineGroup(lines, x + 28, y + 74, 30, 'font-family="Inter, Arial, sans-serif" font-size="27" font-weight="900" fill="#020617"')}
+      <rect x="${x}" y="${y}" width="448" height="102" rx="24" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="${x + 28}" y="${y + 38}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b" letter-spacing="3">${escapeSvgText(item.label.toUpperCase())}</text>
+      ${svgLineGroup(lines, x + 28, y + 74, 29, 'font-family="Inter, Arial, sans-serif" font-size="26" font-weight="900" fill="#020617"')}
     `;
   }).join("");
 
   const metricCards = profile.scoreList.map((item, index) => {
-    const x = 110 + (index % 3) * 288;
-    const y = index < 3 ? 1040 : 1180;
+    const x = 92 + (index % 3) * 302;
+    const y = index < 3 ? 1035 : 1170;
     return `
-      <rect x="${x}" y="${y}" width="258" height="118" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
-      <text x="${x + 20}" y="${y + 34}" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#020617">${escapeSvgText(item.label)}</text>
-      <text x="${x + 20}" y="${y + 66}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#64748b">${escapeSvgText(item.display)}</text>
-      <text x="${x + 226}" y="${y + 59}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#020617">${shareScoreText(item.score)}</text>
-      ${svgScoreBar(x + 20, y + 88, 205, item.score)}
+      <rect x="${x}" y="${y}" width="282" height="118" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="${x + 20}" y="${y + 33}" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#020617">${escapeSvgText(item.label)}</text>
+      <text x="${x + 20}" y="${y + 64}" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="800" fill="#64748b">${escapeSvgText(item.display)}</text>
+      <text x="${x + 246}" y="${y + 59}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="35" font-weight="900" fill="#020617">${shareScoreText(item.score)}</text>
+      ${svgScoreBar(x + 20, y + 88, 220, item.score)}
     `;
   }).join("");
 
   const bucketCards = profile.bucketItems.map((bucket, index) => {
-    const x = index % 2 === 0 ? 110 : 555;
-    const y = index < 2 ? 1495 : 1620;
+    const x = index % 2 === 0 ? 92 : 542;
+    const y = index < 2 ? 1484 : 1608;
     return `
-      <rect x="${x}" y="${y}" width="395" height="103" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
-      <text x="${x + 22}" y="${y + 38}" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#64748b" letter-spacing="2">${escapeSvgText(bucket.label.toUpperCase())}</text>
-      <text x="${x + 320}" y="${y + 58}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="900" fill="#020617">${shareScoreText(bucket.score)}</text>
-      ${svgScoreBar(x + 22, y + 76, 320, bucket.score)}
+      <rect x="${x}" y="${y}" width="416" height="106" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="${x + 22}" y="${y + 38}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b" letter-spacing="2">${escapeSvgText(bucket.label.toUpperCase())}</text>
+      <text x="${x + 354}" y="${y + 62}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="900" fill="#020617">${shareScoreText(bucket.score)}</text>
+      ${svgScoreBar(x + 22, y + 80, 330, bucket.score)}
     `;
   }).join("");
 
   return `
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
       <rect width="1080" height="1920" fill="#f1f5f9"/>
-      <rect x="70" y="55" width="940" height="295" rx="42" fill="#231f20"/>
-      <text x="105" y="128" font-family="Inter, Arial, sans-serif" font-size="33" font-weight="900" fill="#ffffff" letter-spacing="3">PEAQ</text>
-      <text x="210" y="128" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#8ed5f5" letter-spacing="8">PEAQ PROFILE</text>
-      <rect x="780" y="100" width="170" height="155" rx="24" fill="#ffffff"/>
-      <text x="865" y="148" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#64748b" letter-spacing="4">OVERALL</text>
-      <text x="865" y="222" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="76" font-weight="900" fill="#020617">${shareScoreText(profile.overallScore)}</text>
+      <rect x="50" y="45" width="980" height="285" rx="46" fill="#231f20"/>
+      <text x="78" y="115" font-family="Inter, Arial, sans-serif" font-size="31" font-weight="900" fill="#ffffff" letter-spacing="3">PEAQ</text>
+      <text x="190" y="115" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#8ed5f5" letter-spacing="8">PEAQ PROFILE</text>
+      <rect x="785" y="92" width="190" height="170" rx="30" fill="#ffffff"/>
+      <text x="880" y="140" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#64748b" letter-spacing="4">OVERALL</text>
+      <text x="880" y="220" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="80" font-weight="900" fill="#020617">${shareScoreText(profile.overallScore)}</text>
       ${nameText}
-      <text x="105" y="305" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="800" fill="#ffffff" opacity="0.65">${escapeSvgText(meta || "Enter athlete details")}</text>
+      <text x="78" y="287" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff" opacity="0.65">${escapeSvgText(meta || "Enter athlete details")}</text>
 
-      <rect x="70" y="380" width="940" height="250" rx="34" fill="#231f20"/>
-      <text x="110" y="432" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#ffffff" opacity="0.5" letter-spacing="5">PROFILE SNAPSHOT</text>
-      <rect x="110" y="455" width="415" height="135" rx="22" fill="#111827"/>
-      <text x="140" y="498" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#ffffff" opacity="0.55" letter-spacing="3">ATHLETE ARCHETYPE</text>
-      ${svgLineGroup(archetypeLines, 140, 534, 26, 'font-family="Inter, Arial, sans-serif" font-size="25" font-weight="900" fill="#ffffff"')}
-      <rect x="140" y="550" width="${Math.min(330, Math.max(170, profile.status.length * 12 + 48))}" height="34" rx="17" fill="${statusTone.fill}"/>
-      <text x="164" y="573" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="${statusTone.text}">${escapeSvgText(profile.status || "No Status")}</text>
-      <rect x="555" y="455" width="415" height="135" rx="22" fill="#111827"/>
-      <text x="585" y="498" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#ffffff" opacity="0.55" letter-spacing="3">PROFILE RATING</text>
-      ${svgStarRating(585, 548, profile.rating)}
+      <text x="68" y="407" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">PROFILE SNAPSHOT</text>
+      <rect x="68" y="430" width="448" height="190" rx="26" fill="#111827"/>
+      <text x="98" y="475" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#ffffff" opacity="0.55" letter-spacing="3">ATHLETE ARCHETYPE</text>
+      ${svgLineGroup(archetypeLines, 98, 516, 28, 'font-family="Inter, Arial, sans-serif" font-size="27" font-weight="900" fill="#ffffff"')}
+      <rect x="98" y="550" width="${statusBadgeWidth}" height="38" rx="19" fill="${statusTone.fill}"/>
+      <text x="122" y="576" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="${statusTone.text}">${escapeSvgText(statusLabel)}</text>
+      <rect x="542" y="430" width="448" height="190" rx="26" fill="#111827"/>
+      <text x="572" y="475" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#ffffff" opacity="0.55" letter-spacing="3">PROFILE RATING</text>
+      ${svgStarRating(572, 532, profile.rating)}
 
       ${limiterCards}
 
-      <rect x="70" y="930" width="940" height="420" rx="34" fill="#f8fafc" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="110" y="985" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">TESTED METRICS</text>
-      <text x="110" y="1022" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="900" fill="#020617">Metric Snapshot</text>
+      <rect x="68" y="902" width="944" height="424" rx="34" fill="#f8fafc" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="92" y="957" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">TESTED METRICS</text>
+      <text x="92" y="997" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="900" fill="#020617">Metric Snapshot</text>
       ${metricCards}
 
-      <rect x="70" y="1390" width="940" height="365" rx="34" fill="#f8fafc" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="110" y="1445" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">CATEGORY SCORES</text>
-      <text x="110" y="1482" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="900" fill="#020617">Profile Buckets</text>
+      <rect x="68" y="1362" width="944" height="382" rx="34" fill="#f8fafc" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="92" y="1417" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">CATEGORY SCORES</text>
+      <text x="92" y="1457" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="900" fill="#020617">Profile Buckets</text>
       ${bucketCards}
       <text x="540" y="1858" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#94a3b8" letter-spacing="4">POWERED BY  <tspan fill="#1e94d2">PEAQ ANALYTICS</tspan></text>
     </svg>
@@ -1437,7 +1438,17 @@ function downloadShareCardPng(data: AthleteData, profile: Profile): void {
 }
 
 function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile: Profile; onBack: () => void }) {
-  const athleteMeta = [data.sex, data.sport, data.position, data.date].filter(Boolean).join(" • ");
+  const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
+  const rating = isFiniteNumber(profile.rating) ? profile.rating : 0;
+  const compactStars = [0, 1, 2, 3, 4].map((index) => {
+    const fillAmount = Math.max(0, Math.min(1, rating - index)) * 100;
+    return (
+      <span key={index} className="relative inline-block text-lg leading-none text-slate-300">
+        ★
+        <span className="absolute left-0 top-0 overflow-hidden text-yellow-400" style={{ width: `${fillAmount}%` }}>★</span>
+      </span>
+    );
+  });
 
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -1447,84 +1458,95 @@ function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile
           <button onClick={() => downloadShareCardPng(data, profile)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-[#1678ad]">Download Story PNG</button>
         </div>
 
-        <section className="mx-auto aspect-[9/16] w-full max-w-[430px] overflow-hidden rounded-[2rem] bg-slate-100 p-5 shadow-2xl">
-          <div className="flex h-full flex-col gap-2.5">
-            <div className="rounded-[1.45rem] bg-[#231f20] p-4 text-white">
+        <section className="mx-auto aspect-[9/16] w-full max-w-[430px] overflow-hidden rounded-[2rem] bg-slate-100 p-3 shadow-2xl">
+          <div className="flex h-full flex-col gap-1.5">
+            <div className="h-[112px] rounded-[1.45rem] bg-[#231f20] p-3 text-white">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2">
-                    <BrandMark variant="wordmark" tone="light" className="h-4 max-w-[82px]" />
-                    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[#8ed5f5]">PEAQ Profile</span>
+                    <BrandMark variant="wordmark" tone="light" className="h-3.5 max-w-[76px]" />
+                    <span className="text-[8px] font-black uppercase tracking-[0.2em] text-[#8ed5f5]">PEAQ Profile</span>
                   </div>
-                  <h1 className="mt-5 text-3xl font-black leading-none tracking-tight">{data.name || "Athlete Name"}</h1>
-                  <p className="mt-2 text-xs font-bold leading-5 text-white/60">{athleteMeta || "PEAQ Profile"}</p>
+                  <h1 className="mt-3 text-2xl font-black leading-none tracking-tight">{data.name || "Athlete Name"}</h1>
+                  <p className="mt-2 truncate text-[10px] font-bold leading-4 text-white/60">{athleteMeta || "PEAQ Profile"}</p>
                 </div>
                 <div className="shrink-0 rounded-2xl bg-white px-3 py-2 text-center text-slate-950">
-                  <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Overall</p>
-                  <p className="text-3xl font-black leading-none">{shareScoreText(profile.overallScore)}</p>
+                  <p className="text-[7px] font-black uppercase tracking-wide text-slate-500">Overall</p>
+                  <p className="text-[1.85rem] font-black leading-none">{shareScoreText(profile.overallScore)}</p>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-[1.35rem] bg-[#231f20] p-3 text-white">
-              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/50">Profile Snapshot</p>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div className="rounded-2xl bg-slate-900/60 p-3">
+            <div>
+              <p className="mb-1 px-1 text-[8px] font-black uppercase tracking-[0.22em] text-slate-500">Profile Snapshot</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="h-[74px] rounded-2xl bg-slate-900 p-2.5 text-white">
                   <p className="text-[8px] font-black uppercase tracking-wide text-white/50">Athlete Archetype</p>
                   <p className="mt-1 text-sm font-black leading-tight">{profile.archetype}</p>
-                  <div className="mt-2"><StatusPill value={profile.status} /></div>
+                  <div className="mt-1"><StatusPill value={profile.status} /></div>
                 </div>
-                <div className="rounded-2xl bg-slate-900/60 p-3">
+                <div className="h-[74px] rounded-2xl bg-slate-900 p-2.5 text-white">
                   <p className="text-[8px] font-black uppercase tracking-wide text-white/50">Profile Rating</p>
-                  <div className="mt-1 origin-left scale-75"><StarRating value={profile.rating} /></div>
+                  <div className="mt-1 flex gap-0.5">{compactStars}</div>
+                  <p className="mt-1 text-[8px] font-black uppercase tracking-wide text-slate-400">{isFiniteNumber(profile.rating) ? profile.rating.toFixed(1) : "—"} / 5 Stars</p>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               {[
                 { label: "Primary Limiter", value: profile.primaryLimiter },
                 { label: "Secondary Limiter", value: profile.secondaryLimiter },
                 { label: "Current Strength", value: profile.greenFlagOne },
                 { label: "Current Strength", value: profile.greenFlagTwo },
               ].map((item) => (
-                <div key={`${item.label}-${item.value}`} className="rounded-2xl bg-white p-3 shadow-sm">
+                <div key={`${item.label}-${item.value}`} className="h-[50px] rounded-2xl bg-white p-2.5 shadow-sm">
                   <p className="text-[8px] font-black uppercase tracking-wide text-slate-500">{item.label}</p>
-                  <p className="mt-1 text-sm font-black leading-tight text-slate-950">{item.value}</p>
+                  <p className="mt-1 truncate text-sm font-black leading-tight text-slate-950">{item.value}</p>
                 </div>
               ))}
             </div>
 
-            <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-3 shadow-sm">
-              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Tested Metrics</p>
-              <h2 className="text-lg font-black tracking-tight">Metric Snapshot</h2>
-              <div className="mt-2 grid grid-cols-3 gap-2">
+            <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-2.5 shadow-sm">
+              <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-500">Tested Metrics</p>
+              <h2 className="text-sm font-black tracking-tight">Metric Snapshot</h2>
+              <div className="mt-1.5 grid grid-cols-3 gap-1.5">
                 {profile.scoreList.map((item) => (
-                  <div key={item.key} className="rounded-2xl border border-slate-200 bg-white p-2">
-                    <p className="text-[9px] font-black leading-tight text-slate-950">{item.label}</p>
-                    <p className="text-[8px] font-bold text-slate-500">{item.display}</p>
-                    <p className="mt-1 text-lg font-black leading-none text-slate-950">{shareScoreText(item.score)}</p>
-                    <ScoreBar score={item.score} />
+                  <div key={item.key} className="h-[68px] rounded-2xl border border-slate-200 bg-white p-1.5">
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="min-w-0">
+                        <p className="truncate text-[8px] font-black leading-tight text-slate-950">{item.label}</p>
+                        <p className="truncate text-[7px] font-bold text-slate-500">{item.display}</p>
+                      </div>
+                      <p className="text-base font-black leading-none text-slate-950">{shareScoreText(item.score)}</p>
+                    </div>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full rounded-full ${scoreColor(item.score)}`} style={{ width: isFiniteNumber(item.score) ? `${Math.round(item.score)}%` : "0%" }} />
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-3 shadow-sm">
-              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">Category Scores</p>
-              <h2 className="text-lg font-black tracking-tight">Profile Buckets</h2>
-              <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="rounded-[1.35rem] border border-slate-200 bg-slate-50 p-2.5 shadow-sm">
+              <p className="text-[8px] font-black uppercase tracking-[0.18em] text-slate-500">Category Scores</p>
+              <h2 className="text-sm font-black tracking-tight">Profile Buckets</h2>
+              <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                 {profile.bucketItems.map((bucket) => (
-                  <div key={bucket.key} className="rounded-2xl border border-slate-200 bg-white p-2">
-                    <p className="text-[8px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p>
-                    <p className="mt-1 text-xl font-black leading-none text-slate-950">{shareScoreText(bucket.score)}</p>
-                    <ScoreBar score={bucket.score} />
+                  <div key={bucket.key} className="h-[56px] rounded-2xl border border-slate-200 bg-white p-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-[8px] font-black uppercase leading-tight tracking-wide text-slate-500">{bucket.label}</p>
+                      <p className="text-lg font-black leading-none text-slate-950">{shareScoreText(bucket.score)}</p>
+                    </div>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full rounded-full ${scoreColor(bucket.score)}`} style={{ width: isFiniteNumber(bucket.score) ? `${Math.round(bucket.score)}%` : "0%" }} />
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="mt-auto flex items-center justify-end gap-1 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+            <div className="mt-auto flex items-center justify-end gap-1 text-[8px] font-black uppercase tracking-[0.18em] text-slate-400">
               <span>Powered by</span>
               <span className="text-[#1e94d2]">PEAQ Analytics</span>
             </div>
@@ -1622,7 +1644,6 @@ function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteDa
             <div className="report-card rounded-[1.2rem] border border-slate-200 bg-slate-50 p-3">
               <div className="flex items-end justify-between gap-2">
                 <div><p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Category Scores</p><h2 className="text-lg font-black tracking-tight">Profile Buckets</h2></div>
-                <p className="text-[9px] font-bold text-slate-500">Each bucket contributes 25%.</p>
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {profile.bucketItems.map((bucket) => <div key={bucket.key} className="rounded-xl border border-slate-200 bg-white p-2"><p className="text-[9px] font-black uppercase tracking-wide text-slate-500">{bucket.label}</p><p className="mt-0.5 text-xl font-black tracking-tight text-slate-950">{isFiniteNumber(bucket.score) ? bucket.score.toFixed(0) : "—"}</p><ScoreBar score={bucket.score} /></div>)}
