@@ -4,7 +4,7 @@ PEAQ Analytics is a React/Vite athlete profiling app for basketball and performa
 
 ## Supabase Setup
 
-The initial Supabase schema lives in `supabase/migrations/001_initial_schema.sql`.
+The Supabase schema migrations live in `supabase/migrations/`. Run them in order before using cloud accounts.
 
 Frontend Supabase configuration uses Vite environment variables:
 

@@ -22,9 +22,9 @@ These settings are also captured in `vercel.json` so Vercel has a stable project
 
 ## Environment Variables
 
-The current beta app still runs on localStorage. Supabase env vars are not required until we wire live accounts and cloud data.
+The live beta app uses Supabase when frontend-safe env vars are present. Without these values, the app falls back to localStorage-only mode.
 
-When Supabase wiring begins, add only frontend-safe values in Vercel Project Settings -> Environment Variables:
+Add only frontend-safe values in Vercel Project Settings -> Environment Variables:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
@@ -52,15 +52,32 @@ Keep the apex domain `peaqanalytics.com` available for the future landing page.
 
 Run this on the hosted URL:
 
-1. Create a coach workspace.
+1. Sign up for a coach account.
+2. Confirm the email if Supabase email confirmation is enabled.
+3. Sign in and confirm the cloud workspace loads.
+4. Edit the Account Profile and confirm it persists after refresh.
+5. Create or import a test athlete.
+6. Open the athlete profile and edit athlete details.
+7. Refresh and confirm the profile edits persist.
+8. Download the CSV template.
+9. Import two or more demo athletes.
+10. Save ready rows.
+11. Open the Athlete Library.
+12. Open an athlete profile.
+13. Print or save a PEAQ Profile PDF.
+14. Open the same URL on an iPhone/Android browser and repeat the dashboard, import, athlete profile, and report views.
+
+Also run one localStorage fallback pass with Supabase env vars removed:
+
+1. Create a local workspace.
 2. Download the CSV template.
 3. Import two or more demo athletes.
 4. Save ready rows.
 5. Open the Athlete Library.
 6. Open an athlete profile.
 7. Print or save a PEAQ Profile PDF.
-8. Open the same URL on an iPhone/Android browser and repeat the dashboard, import, athlete profile, and report views.
+8. Refresh and confirm the local workspace persists.
 
 ## Known Current Limit
 
-Until Supabase Auth is wired, each browser/device keeps its own localStorage workspace. A coach testing on a phone will not automatically see data created on a laptop.
+localStorage remains a fallback and migration source. Data created while signed out or while Supabase env vars are missing lives only in that browser until the coach signs in and the app migrates it to Supabase.

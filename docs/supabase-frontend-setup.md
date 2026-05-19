@@ -32,13 +32,19 @@ Run the migrations in order in the Supabase SQL Editor:
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_client_ids_for_beta_sync.sql`
 3. `supabase/migrations/003_archive_athletes.sql`
+4. `supabase/migrations/004_active_athlete_identity_index.sql`
+5. `supabase/migrations/005_profile_management_fields.sql`
 
 The second migration adds `client_id` fields so the current app can preserve existing local athlete/report IDs while Supabase keeps UUID primary keys internally.
 
 The third migration adds `archived_at` to keep athlete cleanup reversible during beta.
 
+The fourth migration keeps same-name + same-DOB protection scoped to active athletes, so archived profiles do not block future roster cleanup.
+
+The fifth migration adds optional coach and athlete metadata fields used by the Account Profile and athlete Edit Details flows.
+
 ## Current Status
 
-The database schema and frontend environment scaffold are ready.
+The database schema and frontend environment scaffold are ready for live beta accounts.
 
 When Supabase env vars are present, the app shows sign in/sign up, stores coach workspaces in Supabase, and keeps localStorage as a browser backup/migration source. When Supabase env vars are missing, the app falls back to localStorage-only beta mode.
