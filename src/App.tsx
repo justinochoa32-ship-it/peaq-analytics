@@ -18,7 +18,7 @@ type BucketKey = "athleticExpression" | "power" | "strength" | "efficiency";
 type ComparisonKey = "overall" | "rating" | MetricKey | BucketKey;
 type AthleteDataKey = "name" | "sex" | "date" | "dob" | "sport" | "position" | "height" | "bodyweight" | "sprint10" | "drill505" | "cmjHeight" | "mRsi" | "trapBarE1RM";
 type NullableNumber = number | null;
-type ViewName = "auth" | "workspace" | "guide" | "print" | "share-card" | "progress-print" | "builder" | "csv" | "athlete" | "saved-report";
+type ViewName = "auth" | "workspace" | "coach-profile" | "guide" | "print" | "share-card" | "progress-print" | "builder" | "csv" | "athlete" | "saved-report";
 
 type AthleteData = Record<AthleteDataKey, string>;
 
@@ -121,12 +121,20 @@ interface CorrectionSnapshot {
 interface AthleteProfileRecord {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
+  email?: string;
+  phone?: string;
   dob: string;
   sex: string;
   sport: string;
+  teamSchool?: string;
   position: string;
+  graduationYear?: string;
   height: string;
   bodyweight: string;
+  notes?: string;
   archivedAt: string | null;
   reports: SavedReport[];
 }
@@ -134,9 +142,46 @@ interface AthleteProfileRecord {
 interface CoachWorkspace {
   id: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
   email: string;
+  contactEmail?: string;
   organization: string;
+  roleTitle?: string;
+  phone?: string;
+  website?: string;
+  location?: string;
+  notes?: string;
   athletes: AthleteProfileRecord[];
+}
+
+interface AthleteProfileForm {
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  email: string;
+  phone: string;
+  dob: string;
+  sex: string;
+  sport: string;
+  teamSchool: string;
+  position: string;
+  graduationYear: string;
+  notes: string;
+}
+
+interface CoachProfileForm {
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  contactEmail: string;
+  organization: string;
+  roleTitle: string;
+  phone: string;
+  website: string;
+  location: string;
+  notes: string;
 }
 
 interface AthleteIdentity {
@@ -221,18 +266,35 @@ interface CloudProfileRow {
   email: string | null;
   coach_name: string | null;
   organization: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  contact_email: string | null;
+  role_title: string | null;
+  phone: string | null;
+  website: string | null;
+  location: string | null;
+  notes: string | null;
 }
 
 interface CloudAthleteRow {
   id: string;
   client_id: string | null;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  email: string | null;
+  phone: string | null;
   dob: string | null;
   sex: string | null;
   sport: string | null;
+  team_school: string | null;
   position: string | null;
+  graduation_year: number | null;
   height: number | null;
   bodyweight: number | null;
+  notes: string | null;
   archived_at: string | null;
 }
 
@@ -498,6 +560,66 @@ function normalizeIdentity(value: string | null | undefined): string {
   return String(value || "").trim().toLowerCase();
 }
 
+function cleanText(value: string | number | null | undefined): string {
+  return String(value ?? "").trim();
+}
+
+function getCloudText(value: string | number | null | undefined): string | null {
+  const text = cleanText(value);
+  return text || null;
+}
+
+function getCloudInteger(value: string | number | null | undefined): number | null {
+  const text = cleanText(value);
+  if (!text) return null;
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getPersonName(firstName: string | null | undefined, lastName: string | null | undefined): string {
+  return [cleanText(firstName), cleanText(lastName)].filter(Boolean).join(" ");
+}
+
+function getAthleteDisplayName(athlete: Partial<AthleteProfileRecord> | null | undefined): string {
+  return cleanText(athlete?.displayName) || getPersonName(athlete?.firstName, athlete?.lastName) || cleanText(athlete?.name) || "Unnamed Athlete";
+}
+
+function getCoachDisplayName(coach: Partial<CoachWorkspace> | null | undefined): string {
+  return cleanText(coach?.displayName) || getPersonName(coach?.firstName, coach?.lastName) || cleanText(coach?.name) || "Coach";
+}
+
+function getAthleteProfileForm(athlete: AthleteProfileRecord): AthleteProfileForm {
+  return {
+    firstName: cleanText(athlete.firstName),
+    lastName: cleanText(athlete.lastName),
+    displayName: cleanText(athlete.displayName) || athlete.name,
+    email: cleanText(athlete.email),
+    phone: cleanText(athlete.phone),
+    dob: normalizeDateValue(athlete.dob),
+    sex: athlete.sex || "Male",
+    sport: athlete.sport || "Basketball",
+    teamSchool: cleanText(athlete.teamSchool),
+    position: athlete.position || "",
+    graduationYear: cleanText(athlete.graduationYear),
+    notes: cleanText(athlete.notes),
+  };
+}
+
+function getCoachProfileForm(coach: CoachWorkspace): CoachProfileForm {
+  return {
+    firstName: cleanText(coach.firstName),
+    lastName: cleanText(coach.lastName),
+    displayName: cleanText(coach.displayName) || coach.name,
+    contactEmail: cleanText(coach.contactEmail) || coach.email,
+    organization: coach.organization || "",
+    roleTitle: cleanText(coach.roleTitle),
+    phone: cleanText(coach.phone),
+    website: cleanText(coach.website),
+    location: cleanText(coach.location),
+    notes: cleanText(coach.notes),
+  };
+}
+
 function getAthleteDob(athlete: Partial<AthleteProfileRecord> | null | undefined): string {
   const reportWithDob = athlete?.reports?.find((report) => report?.data?.dob);
   return String(athlete?.dob || reportWithDob?.data?.dob || "").trim();
@@ -536,13 +658,21 @@ function normalizeAthleteProfile(athlete: Partial<AthleteProfileRecord>, index: 
   return {
     ...athlete,
     id,
-    name: athlete.name || latestData.name || "Unnamed Athlete",
+    name: getAthleteDisplayName({ ...athlete, name: athlete.name || latestData.name }),
+    firstName: cleanText(athlete.firstName),
+    lastName: cleanText(athlete.lastName),
+    displayName: cleanText(athlete.displayName) || cleanText(athlete.name) || cleanText(latestData.name),
+    email: cleanText(athlete.email),
+    phone: cleanText(athlete.phone),
     dob,
     sex: athlete.sex || latestData.sex || "Male",
     sport: athlete.sport || latestData.sport || "Basketball",
+    teamSchool: cleanText(athlete.teamSchool),
     position: athlete.position || latestData.position || "",
+    graduationYear: cleanText(athlete.graduationYear),
     height: athlete.height || latestData.height || "",
     bodyweight: athlete.bodyweight || latestData.bodyweight || "",
+    notes: cleanText(athlete.notes),
     archivedAt: athlete.archivedAt || null,
     reports,
   };
@@ -551,7 +681,22 @@ function normalizeAthleteProfile(athlete: Partial<AthleteProfileRecord>, index: 
 function normalizeCoachWorkspace(coach: CoachWorkspace | null): CoachWorkspace | null {
   if (!coach || !Array.isArray(coach.athletes)) return coach;
   const usedIds = new Set<string>();
-  return { ...coach, athletes: coach.athletes.map((athlete, index) => normalizeAthleteProfile(athlete, index, usedIds)) };
+  const displayName = cleanText(coach.displayName) || getPersonName(coach.firstName, coach.lastName) || cleanText(coach.name) || "Coach";
+  return {
+    ...coach,
+    name: displayName,
+    firstName: cleanText(coach.firstName),
+    lastName: cleanText(coach.lastName),
+    displayName,
+    contactEmail: cleanText(coach.contactEmail),
+    organization: cleanText(coach.organization) || "PEAQ Analytics",
+    roleTitle: cleanText(coach.roleTitle),
+    phone: cleanText(coach.phone),
+    website: cleanText(coach.website),
+    location: cleanText(coach.location),
+    notes: cleanText(coach.notes),
+    athletes: coach.athletes.map((athlete, index) => normalizeAthleteProfile(athlete, index, usedIds)),
+  };
 }
 
 function isArchivedAthlete(athlete: Pick<AthleteProfileRecord, "archivedAt">): boolean {
@@ -640,15 +785,24 @@ function findExactNameDobAthlete(athletes: AthleteProfileRecord[], data: Athlete
 }
 
 function buildAthleteBase(data: AthleteData, athleteId: string, existingAthlete: AthleteProfileRecord | null | undefined): AthleteProfileRecord {
+  const name = data.name || getAthleteDisplayName(existingAthlete);
   return {
     id: athleteId,
-    name: data.name || existingAthlete?.name || "Unnamed Athlete",
+    name,
+    firstName: existingAthlete?.firstName || "",
+    lastName: existingAthlete?.lastName || "",
+    displayName: existingAthlete?.displayName || name,
+    email: existingAthlete?.email || "",
+    phone: existingAthlete?.phone || "",
     dob: data.dob || getAthleteDob(existingAthlete),
     sex: data.sex || existingAthlete?.sex || "Male",
     sport: data.sport || existingAthlete?.sport || "Basketball",
+    teamSchool: existingAthlete?.teamSchool || "",
     position: data.position || existingAthlete?.position || "",
+    graduationYear: existingAthlete?.graduationYear || "",
     height: data.height || existingAthlete?.height || "",
     bodyweight: data.bodyweight || existingAthlete?.bodyweight || "",
+    notes: existingAthlete?.notes || "",
     archivedAt: existingAthlete?.archivedAt || null,
     reports: [],
   };
@@ -657,7 +811,7 @@ function buildAthleteBase(data: AthleteData, athleteId: string, existingAthlete:
 function buildAthleteReportDraft(athlete: AthleteProfileRecord): AthleteData {
   return {
     ...blankAthlete,
-    name: athlete.name,
+    name: getAthleteDisplayName(athlete),
     sex: athlete.sex || "Male",
     date: new Date().toISOString().slice(0, 10),
     dob: getAthleteDob(athlete),
@@ -1102,6 +1256,15 @@ function SelectField({ label, value, onChange, children }: { label: string; valu
       <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[#1e94d2]">
         {children}
       </select>
+    </label>
+  );
+}
+
+function TextAreaField({ label, value, onChange, rows = 4 }: { label: string; value: string; onChange: (value: string) => void; rows?: number }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <textarea value={value} rows={rows} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 outline-none focus:border-[#1e94d2]" />
     </label>
   );
 }
@@ -2202,10 +2365,10 @@ function buildReportFromCloud(row: CloudReportRow): SavedReport {
 
 async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWorkspace> {
   const [profileRows, athleteRows, reportRows] = await Promise.all([
-    supabaseFetch<CloudProfileRow[]>("/rest/v1/profiles?select=id,email,coach_name,organization&limit=1", {
+    supabaseFetch<CloudProfileRow[]>("/rest/v1/profiles?select=id,email,coach_name,organization,first_name,last_name,display_name,contact_email,role_title,phone,website,location,notes&limit=1", {
       accessToken: session.accessToken,
     }),
-    supabaseFetch<CloudAthleteRow[]>("/rest/v1/athletes?select=id,client_id,name,dob,sex,sport,position,height,bodyweight,archived_at&order=updated_at.desc", {
+    supabaseFetch<CloudAthleteRow[]>("/rest/v1/athletes?select=id,client_id,name,first_name,last_name,display_name,email,phone,dob,sex,sport,team_school,position,graduation_year,height,bodyweight,notes,archived_at&order=updated_at.desc", {
       accessToken: session.accessToken,
     }),
     supabaseFetch<CloudReportRow[]>("/rest/v1/reports?select=id,client_id,athlete_id,testing_date,raw_inputs,calculated_profile,overall_score,profile_rating,archetype,status,primary_limiter,secondary_limiter,saved_at,corrected_at,correction_count,correction_history&order=testing_date.desc", {
@@ -2224,12 +2387,20 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
   const athletes: AthleteProfileRecord[] = athleteRows.map((row) => ({
     id: row.client_id || `athlete-${row.id}`,
     name: row.name,
+    firstName: row.first_name || "",
+    lastName: row.last_name || "",
+    displayName: row.display_name || row.name,
+    email: row.email || "",
+    phone: row.phone || "",
     dob: row.dob || "",
     sex: row.sex || "Male",
     sport: row.sport || "Basketball",
+    teamSchool: row.team_school || "",
     position: row.position || "",
+    graduationYear: row.graduation_year === null || row.graduation_year === undefined ? "" : String(row.graduation_year),
     height: row.height === null || row.height === undefined ? "" : String(row.height),
     bodyweight: row.bodyweight === null || row.bodyweight === undefined ? "" : String(row.bodyweight),
+    notes: row.notes || "",
     archivedAt: row.archived_at || null,
     reports: (reportsByAthleteId.get(row.id) || []).sort((a, b) => b.date.localeCompare(a.date)),
   }));
@@ -2237,14 +2408,32 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
   return normalizeCoachWorkspace({
     id: session.user.id,
     name: profile?.coach_name || "Coach",
+    firstName: profile?.first_name || "",
+    lastName: profile?.last_name || "",
+    displayName: profile?.display_name || profile?.coach_name || "Coach",
     email: profile?.email || session.user.email || "",
+    contactEmail: profile?.contact_email || profile?.email || session.user.email || "",
     organization: profile?.organization || "PEAQ Analytics",
+    roleTitle: profile?.role_title || "",
+    phone: profile?.phone || "",
+    website: profile?.website || "",
+    location: profile?.location || "",
+    notes: profile?.notes || "",
     athletes,
   }) || {
     id: session.user.id,
     name: profile?.coach_name || "Coach",
+    firstName: profile?.first_name || "",
+    lastName: profile?.last_name || "",
+    displayName: profile?.display_name || profile?.coach_name || "Coach",
     email: profile?.email || session.user.email || "",
+    contactEmail: profile?.contact_email || profile?.email || session.user.email || "",
     organization: profile?.organization || "PEAQ Analytics",
+    roleTitle: profile?.role_title || "",
+    phone: profile?.phone || "",
+    website: profile?.website || "",
+    location: profile?.location || "",
+    notes: profile?.notes || "",
     athletes,
   };
 }
@@ -2262,6 +2451,15 @@ async function saveCoachToSupabase(coach: CoachWorkspace, session: SupabaseSessi
       email: normalizedCoach.email || session.user.email || null,
       coach_name: normalizedCoach.name || "Coach",
       organization: normalizedCoach.organization || null,
+      first_name: getCloudText(normalizedCoach.firstName),
+      last_name: getCloudText(normalizedCoach.lastName),
+      display_name: getCloudText(normalizedCoach.displayName || normalizedCoach.name),
+      contact_email: getCloudText(normalizedCoach.contactEmail),
+      role_title: getCloudText(normalizedCoach.roleTitle),
+      phone: getCloudText(normalizedCoach.phone),
+      website: getCloudText(normalizedCoach.website),
+      location: getCloudText(normalizedCoach.location),
+      notes: getCloudText(normalizedCoach.notes),
     }]),
   });
 
@@ -2271,12 +2469,20 @@ async function saveCoachToSupabase(coach: CoachWorkspace, session: SupabaseSessi
     client_id: athlete.id,
     coach_id: session.user.id,
     name: athlete.name || "Unnamed Athlete",
+    first_name: getCloudText(athlete.firstName),
+    last_name: getCloudText(athlete.lastName),
+    display_name: getCloudText(athlete.displayName || athlete.name),
+    email: getCloudText(athlete.email),
+    phone: getCloudText(athlete.phone),
     dob: getCloudDate(getAthleteDob(athlete)),
     sex: athlete.sex || null,
     sport: athlete.sport || null,
+    team_school: getCloudText(athlete.teamSchool),
     position: athlete.position || null,
+    graduation_year: getCloudInteger(athlete.graduationYear),
     height: getCloudNumber(athlete.height),
     bodyweight: getCloudNumber(athlete.bodyweight),
+    notes: getCloudText(athlete.notes),
     archived_at: athlete.archivedAt || null,
   }));
 
@@ -2784,6 +2990,122 @@ function ReportComparison({ reports, onPrintComparison }: { reports: SavedReport
   );
 }
 
+function AthleteDetailsPanel({ athlete, onSave }: { athlete: AthleteProfileRecord; onSave: (updates: AthleteProfileForm) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<AthleteProfileForm>(() => getAthleteProfileForm(athlete));
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!editing) setForm(getAthleteProfileForm(athlete));
+  }, [athlete, editing]);
+
+  function update<K extends keyof AthleteProfileForm>(key: K, value: AthleteProfileForm[K]): void {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function save(): void {
+    const firstName = cleanText(form.firstName);
+    const lastName = cleanText(form.lastName);
+    const displayName = cleanText(form.displayName) || getPersonName(firstName, lastName) || athlete.name;
+    if (!displayName) {
+      setMessage("Athlete display name is required.");
+      return;
+    }
+
+    onSave({
+      firstName,
+      lastName,
+      displayName,
+      email: cleanText(form.email),
+      phone: cleanText(form.phone),
+      dob: normalizeDateValue(form.dob),
+      sex: form.sex === "Female" ? "Female" : "Male",
+      sport: cleanText(form.sport) || "Basketball",
+      teamSchool: cleanText(form.teamSchool),
+      position: cleanText(form.position),
+      graduationYear: cleanText(form.graduationYear),
+      notes: cleanText(form.notes),
+    });
+    setEditing(false);
+    setMessage("Athlete details saved.");
+  }
+
+  function cancel(): void {
+    setForm(getAthleteProfileForm(athlete));
+    setEditing(false);
+    setMessage("");
+  }
+
+  const detailItems: Array<[string, string | undefined]> = [
+    ["Display Name", getAthleteDisplayName(athlete)],
+    ["Email", athlete.email],
+    ["Phone", athlete.phone],
+    ["DOB", getAthleteDob(athlete)],
+    ["Sex", athlete.sex],
+    ["Sport", athlete.sport],
+    ["Team / School", athlete.teamSchool],
+    ["Position", athlete.position],
+    ["Graduation Year", athlete.graduationYear],
+  ];
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-wide text-slate-500">Athlete Details</p>
+          <h2 className="text-2xl font-black tracking-tight">Profile Metadata</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">These fields help identify and contact the athlete. Saved reports keep their original report data.</p>
+        </div>
+        {editing ? (
+          <div className="flex flex-wrap gap-2">
+            <button onClick={save} className="rounded-2xl bg-[#1e94d2] px-4 py-2 text-sm font-black text-white hover:bg-[#167bb0]">Save Details</button>
+            <button onClick={cancel} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200">Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => { setEditing(true); setMessage(""); }} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Edit Details</button>
+        )}
+      </div>
+
+      {message ? <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700">{message}</p> : null}
+
+      {editing ? (
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Field label="First Name" value={form.firstName} onChange={(value) => update("firstName", value)} />
+          <Field label="Last Name" value={form.lastName} onChange={(value) => update("lastName", value)} />
+          <Field label="Display Name" value={form.displayName} onChange={(value) => update("displayName", value)} />
+          <Field label="Email" type="email" value={form.email} onChange={(value) => update("email", value)} />
+          <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} />
+          <Field label="Birthday / DOB" type="date" value={form.dob} onChange={(value) => update("dob", value)} />
+          <SelectField label="Sex" value={form.sex} onChange={(value) => update("sex", value)}>
+            <option>Male</option>
+            <option>Female</option>
+          </SelectField>
+          <Field label="Sport" value={form.sport} onChange={(value) => update("sport", value)} />
+          <Field label="Team / School" value={form.teamSchool} onChange={(value) => update("teamSchool", value)} />
+          <Field label="Position" value={form.position} onChange={(value) => update("position", value)} />
+          <Field label="Graduation Year" value={form.graduationYear} onChange={(value) => update("graduationYear", value)} />
+          <div className="md:col-span-2"><TextAreaField label="Notes" value={form.notes} onChange={(value) => update("notes", value)} /></div>
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          {detailItems.map(([label, value]) => (
+            <div key={label} className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+              <p className="mt-2 font-black text-slate-950">{value || "—"}</p>
+            </div>
+          ))}
+          {athlete.notes ? (
+            <div className="rounded-2xl bg-slate-50 p-4 md:col-span-3">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">Notes</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">{athlete.notes}</p>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AthleteProfile({
   athlete,
   onBack,
@@ -2792,6 +3114,7 @@ function AthleteProfile({
   onRestore,
   onOpenReport,
   onPrintComparison,
+  onUpdateAthlete,
 }: {
   athlete: AthleteProfileRecord;
   onBack: () => void;
@@ -2800,6 +3123,7 @@ function AthleteProfile({
   onRestore: () => void;
   onOpenReport: (report: SavedReport) => void;
   onPrintComparison: (reportA: SavedReport, reportB: SavedReport) => void;
+  onUpdateAthlete: (athleteId: string, updates: AthleteProfileForm) => void;
 }) {
   const archived = isArchivedAthlete(athlete);
   const latest = athlete.reports[0];
@@ -2813,6 +3137,7 @@ function AthleteProfile({
             <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
           </BrandedPageHeader>
           {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
+          <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
           <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
             <p className="text-2xl font-black text-slate-950">No saved reports yet.</p>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a complete CSV row for this athlete before reviewing scores, limiters, or report history.</p>
@@ -2831,6 +3156,7 @@ function AthleteProfile({
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Library</button>
         </BrandedPageHeader>
         {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
+        <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
         <ReportComparison reports={athlete.reports} onPrintComparison={onPrintComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
@@ -3093,6 +3419,127 @@ function PasswordResetCard({
   );
 }
 
+function CoachProfilePage({ coach, onBack, onSave }: { coach: CoachWorkspace; onBack: () => void; onSave: (updates: CoachProfileForm) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<CoachProfileForm>(() => getCoachProfileForm(coach));
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!editing) setForm(getCoachProfileForm(coach));
+  }, [coach, editing]);
+
+  function update<K extends keyof CoachProfileForm>(key: K, value: CoachProfileForm[K]): void {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function save(): void {
+    const firstName = cleanText(form.firstName);
+    const lastName = cleanText(form.lastName);
+    const displayName = cleanText(form.displayName) || getPersonName(firstName, lastName) || coach.name;
+    if (!displayName) {
+      setMessage("Coach display name is required.");
+      return;
+    }
+
+    onSave({
+      firstName,
+      lastName,
+      displayName,
+      contactEmail: cleanText(form.contactEmail),
+      organization: cleanText(form.organization) || "PEAQ Analytics",
+      roleTitle: cleanText(form.roleTitle),
+      phone: cleanText(form.phone),
+      website: cleanText(form.website),
+      location: cleanText(form.location),
+      notes: cleanText(form.notes),
+    });
+    setEditing(false);
+    setMessage("Account profile saved.");
+  }
+
+  function cancel(): void {
+    setForm(getCoachProfileForm(coach));
+    setEditing(false);
+    setMessage("");
+  }
+
+  const detailItems: Array<[string, string | undefined]> = [
+    ["Display Name", getCoachDisplayName(coach)],
+    ["Sign-in Email", coach.email],
+    ["Contact Email", coach.contactEmail],
+    ["Organization", coach.organization],
+    ["Role / Title", coach.roleTitle],
+    ["Phone", coach.phone],
+    ["Website", coach.website],
+    ["Location", coach.location],
+  ];
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-6">
+        <BrandedPageHeader eyebrow="Account Profile" title={getCoachDisplayName(coach)} copy={coach.organization || "PEAQ Analytics"}>
+          <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
+        </BrandedPageHeader>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase tracking-wide text-slate-500">Coach Details</p>
+              <h2 className="text-2xl font-black tracking-tight">Profile Metadata</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">This is coach-facing account metadata. Your Supabase sign-in email stays separate from the editable contact email.</p>
+            </div>
+            {editing ? (
+              <div className="flex flex-wrap gap-2">
+                <button onClick={save} className="rounded-2xl bg-[#1e94d2] px-4 py-2 text-sm font-black text-white hover:bg-[#167bb0]">Save Profile</button>
+                <button onClick={cancel} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => { setEditing(true); setMessage(""); }} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Edit Profile</button>
+            )}
+          </div>
+
+          {message ? <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700">{message}</p> : null}
+
+          {editing ? (
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <Field label="First Name" value={form.firstName} onChange={(value) => update("firstName", value)} />
+              <Field label="Last Name" value={form.lastName} onChange={(value) => update("lastName", value)} />
+              <Field label="Display Name" value={form.displayName} onChange={(value) => update("displayName", value)} />
+              <Field label="Contact Email" type="email" value={form.contactEmail} onChange={(value) => update("contactEmail", value)} />
+              <Field label="Organization / Business" value={form.organization} onChange={(value) => update("organization", value)} />
+              <Field label="Role / Title" value={form.roleTitle} onChange={(value) => update("roleTitle", value)} />
+              <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} />
+              <Field label="Website" value={form.website} onChange={(value) => update("website", value)} />
+              <Field label="Location" value={form.location} onChange={(value) => update("location", value)} />
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Sign-in Email</p>
+                <p className="mt-2 font-black text-slate-950">{coach.email || "—"}</p>
+                <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">Authentication email is managed through Supabase Auth, so editing this profile will not change login credentials.</p>
+              </div>
+              <div className="md:col-span-2"><TextAreaField label="Notes / Bio" value={form.notes} onChange={(value) => update("notes", value)} /></div>
+            </div>
+          ) : (
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {detailItems.map(([label, value]) => (
+                <div key={label} className="rounded-2xl bg-slate-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+                  <p className="mt-2 font-black text-slate-950">{value || "—"}</p>
+                </div>
+              ))}
+              {coach.notes ? (
+                <div className="rounded-2xl bg-slate-50 p-4 md:col-span-2">
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">Notes / Bio</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">{coach.notes}</p>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function Workspace({
   coach,
   onLogout,
@@ -3102,6 +3549,7 @@ function Workspace({
   onRestoreAthlete,
   onBulkArchiveState,
   onGuide,
+  onCoachProfile,
   onPrintReport,
   syncStatus,
 }: {
@@ -3113,6 +3561,7 @@ function Workspace({
   onRestoreAthlete: (id: string) => void;
   onBulkArchiveState: (athleteIds: string[], archivedAt: string | null) => void;
   onGuide: () => void;
+  onCoachProfile: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
   syncStatus?: string;
 }) {
@@ -3244,6 +3693,7 @@ function Workspace({
               <div className="flex flex-wrap items-center gap-3">
                 <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
                 <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Logged in as {coach.name}</span>
+                <button onClick={onCoachProfile} className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70 hover:bg-white/15">Account Profile</button>
                 {syncStatus ? <span className="rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span> : null}
               </div>
               <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization}</h1>
@@ -3740,6 +4190,67 @@ export default function AthleteProfilingMVP() {
     window.setTimeout(() => alert("Athlete restored to the active library."), 100);
   }
 
+  function updateAthleteProfile(athleteId: string, updates: AthleteProfileForm): void {
+    updateCoach((current) => {
+      const normalizedCoach = normalizeCoachWorkspace(current);
+      if (!normalizedCoach) return current;
+
+      return {
+        ...normalizedCoach,
+        athletes: normalizedCoach.athletes.map((athlete) => {
+          if (athlete.id !== athleteId) return athlete;
+
+          const firstName = cleanText(updates.firstName);
+          const lastName = cleanText(updates.lastName);
+          const displayName = cleanText(updates.displayName) || getPersonName(firstName, lastName) || athlete.name;
+
+          return {
+            ...athlete,
+            name: displayName,
+            firstName,
+            lastName,
+            displayName,
+            email: cleanText(updates.email),
+            phone: cleanText(updates.phone),
+            dob: normalizeDateValue(updates.dob),
+            sex: updates.sex === "Female" ? "Female" : "Male",
+            sport: cleanText(updates.sport) || "Basketball",
+            teamSchool: cleanText(updates.teamSchool),
+            position: cleanText(updates.position),
+            graduationYear: cleanText(updates.graduationYear),
+            notes: cleanText(updates.notes),
+          };
+        }),
+      };
+    });
+  }
+
+  function updateCoachProfile(updates: CoachProfileForm): void {
+    updateCoach((current) => {
+      const normalizedCoach = normalizeCoachWorkspace(current);
+      if (!normalizedCoach) return current;
+
+      const firstName = cleanText(updates.firstName);
+      const lastName = cleanText(updates.lastName);
+      const displayName = cleanText(updates.displayName) || getPersonName(firstName, lastName) || normalizedCoach.name;
+
+      return {
+        ...normalizedCoach,
+        name: displayName,
+        firstName,
+        lastName,
+        displayName,
+        contactEmail: cleanText(updates.contactEmail),
+        organization: cleanText(updates.organization) || "PEAQ Analytics",
+        roleTitle: cleanText(updates.roleTitle),
+        phone: cleanText(updates.phone),
+        website: cleanText(updates.website),
+        location: cleanText(updates.location),
+        notes: cleanText(updates.notes),
+      };
+    });
+  }
+
   function renderWorkspace(workspace: CoachWorkspace) {
     return (
       <Workspace
@@ -3751,6 +4262,7 @@ export default function AthleteProfilingMVP() {
         onRestoreAthlete={restoreAthlete}
         onBulkArchiveState={setAthletesArchiveState}
         onGuide={() => navigate("guide", { athleteId: null, reportId: null })}
+        onCoachProfile={() => navigate("coach-profile", { athleteId: null, reportId: null })}
         onPrintReport={openPrintReport}
         syncStatus={cloudStatus}
       />
@@ -3774,6 +4286,7 @@ export default function AthleteProfilingMVP() {
   }
 
   if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); navigate("workspace", { athleteId: null, reportId: null }); }} cloudEnabled={supabaseConfig.isConfigured} authMessage={authMessage} onSignIn={handleCloudSignIn} onSignUp={handleCloudSignUp} onPasswordReset={handlePasswordReset} />;
+  if (view === "coach-profile") return <CoachProfilePage coach={coach} onBack={goWorkspace} onSave={updateCoachProfile} />;
   if (view === "guide") return <ScoringGuide onBack={goWorkspace} />;
   if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} onShareCard={() => openShareCard(printData, printProfile, { view: "print", selectedAthleteId, selectedReportId })} />;
   if (view === "share-card" && printData && printProfile) return <ShareCardExport data={printData} profile={printProfile} onBack={returnFromShareCard} />;
@@ -3783,7 +4296,7 @@ export default function AthleteProfilingMVP() {
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return renderWorkspace(coach);
-    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} />;
+    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
