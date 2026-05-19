@@ -1249,13 +1249,6 @@ function shareScoreText(score: NullableNumber | undefined): string {
   return isFiniteNumber(score) ? score.toFixed(0) : "--";
 }
 
-function shareStatusTone(status: string | undefined): { fill: string; text: string } {
-  const label = status || "No Status";
-  if (label.includes("Near") || label.includes("Complete")) return { fill: "#dcfce7", text: "#166534" };
-  if (label.includes("Limited") || label.includes("Broad")) return { fill: "#fef3c7", text: "#92400e" };
-  return { fill: "#e2e8f0", text: "#334155" };
-}
-
 function escapeSvgText(value: string | number | null | undefined): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -1313,9 +1306,6 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
   const athleteName = data.name || "Athlete Name";
   const nameLines = splitSvgText(athleteName, 16, 2);
   const meta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
-  const statusTone = shareStatusTone(profile.status);
-  const statusLabel = profile.status || "No Status";
-  const statusBadgeWidth = Math.min(330, Math.max(170, statusLabel.length * 12 + 48));
   const nameText = svgLineGroup(nameLines, 78, 210, 58, 'font-family="Inter, Arial, sans-serif" font-size="60" font-weight="900" fill="#ffffff"');
   const archetypeLines = splitSvgText(profile.archetype, 24, 2);
   const limiterCards = [
@@ -1372,9 +1362,7 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
       <text x="68" y="407" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">PROFILE SNAPSHOT</text>
       <rect x="68" y="430" width="448" height="190" rx="26" fill="#111827"/>
       <text x="98" y="475" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#ffffff" opacity="0.55" letter-spacing="3">ATHLETE ARCHETYPE</text>
-      ${svgLineGroup(archetypeLines, 98, 516, 28, 'font-family="Inter, Arial, sans-serif" font-size="27" font-weight="900" fill="#ffffff"')}
-      <rect x="98" y="550" width="${statusBadgeWidth}" height="38" rx="19" fill="${statusTone.fill}"/>
-      <text x="122" y="576" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="${statusTone.text}">${escapeSvgText(statusLabel)}</text>
+      ${svgLineGroup(archetypeLines, 98, 528, 30, 'font-family="Inter, Arial, sans-serif" font-size="30" font-weight="900" fill="#ffffff"')}
       <rect x="542" y="430" width="448" height="190" rx="26" fill="#111827"/>
       <text x="572" y="475" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#ffffff" opacity="0.55" letter-spacing="3">PROFILE RATING</text>
       ${svgStarRating(572, 532, profile.rating)}
@@ -1395,46 +1383,87 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
   `;
 }
 
-function downloadShareCardPng(data: AthleteData, profile: Profile): void {
+function getShareCardFileName(data: AthleteData): string {
+  return `${slugify(data.name || "peaq-profile") || "peaq-profile"}-story-profile.png`;
+}
+
+function renderShareCardPngBlob(data: AthleteData, profile: Profile): Promise<Blob> {
   const svg = buildShareCardSvg(data, profile);
   const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const svgUrl = URL.createObjectURL(svgBlob);
   const image = new Image();
 
-  image.onload = () => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 1080;
-    canvas.height = 1920;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      URL.revokeObjectURL(svgUrl);
-      window.alert("Could not create the story card image.");
-      return;
-    }
-    context.drawImage(image, 0, 0);
-    URL.revokeObjectURL(svgUrl);
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        window.alert("Could not create the story card image.");
+  return new Promise((resolve, reject) => {
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1080;
+      canvas.height = 1920;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        URL.revokeObjectURL(svgUrl);
+        reject(new Error("Canvas is unavailable."));
         return;
       }
-      const downloadUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = downloadUrl;
-      link.download = `${slugify(data.name || "peaq-profile") || "peaq-profile"}-story-card.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(downloadUrl);
-    }, "image/png");
-  };
+      context.drawImage(image, 0, 0);
+      URL.revokeObjectURL(svgUrl);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("PNG export failed."));
+          return;
+        }
+        resolve(blob);
+      }, "image/png");
+    };
 
-  image.onerror = () => {
-    URL.revokeObjectURL(svgUrl);
-    window.alert("Could not create the story card image.");
-  };
+    image.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+      reject(new Error("Image export failed."));
+    };
 
-  image.src = svgUrl;
+    image.src = svgUrl;
+  });
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const downloadUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+}
+
+async function saveShareCardPng(data: AthleteData, profile: Profile): Promise<void> {
+  try {
+    const blob = await renderShareCardPngBlob(data, profile);
+    const fileName = getShareCardFileName(data);
+    const file = new File([blob], fileName, { type: "image/png" });
+    const shareData: ShareData = {
+      title: "PEAQ Story Profile",
+      text: `${data.name || "Athlete"} PEAQ Profile`,
+      files: [file],
+    };
+    const shareNavigator = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+
+    if (typeof shareNavigator.share === "function" && typeof shareNavigator.canShare === "function" && shareNavigator.canShare({ files: [file] })) {
+      try {
+        await shareNavigator.share(shareData);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+
+    downloadBlob(blob, fileName);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    window.alert("Could not create the story profile image.");
+  }
 }
 
 function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile: Profile; onBack: () => void }) {
@@ -1455,10 +1484,10 @@ function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile
       <div className="mx-auto max-w-5xl space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button onClick={onBack} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50">Back</button>
-          <button onClick={() => downloadShareCardPng(data, profile)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-[#1678ad]">Download Story PNG</button>
+          <button onClick={() => void saveShareCardPng(data, profile)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-[#1678ad]">Save Story Profile</button>
         </div>
 
-        <section className="mx-auto aspect-[9/16] w-full max-w-[430px] overflow-hidden rounded-[2rem] bg-slate-100 p-3 shadow-2xl">
+        <section className="mx-auto aspect-[9/16] overflow-hidden rounded-[2rem] bg-slate-100 p-3 shadow-2xl" style={{ width: "min(100%, 430px, calc(56.25dvh - 1.40625rem))" }}>
           <div className="flex h-full flex-col gap-1.5">
             <div className="h-[112px] rounded-[1.45rem] bg-[#231f20] p-3 text-white">
               <div className="flex items-start justify-between gap-4">
@@ -1482,8 +1511,7 @@ function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile
               <div className="grid grid-cols-2 gap-1.5">
                 <div className="h-[74px] rounded-2xl bg-slate-900 p-2.5 text-white">
                   <p className="text-[8px] font-black uppercase tracking-wide text-white/50">Athlete Archetype</p>
-                  <p className="mt-1 text-sm font-black leading-tight">{profile.archetype}</p>
-                  <div className="mt-1"><StatusPill value={profile.status} /></div>
+                  <p className="mt-2 text-sm font-black leading-tight">{profile.archetype}</p>
                 </div>
                 <div className="h-[74px] rounded-2xl bg-slate-900 p-2.5 text-white">
                   <p className="text-[8px] font-black uppercase tracking-wide text-white/50">Profile Rating</p>
@@ -1581,7 +1609,7 @@ function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteDa
       <div className="no-print mx-auto mb-4 flex max-w-7xl flex-wrap gap-3">
         <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
         <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
-        <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Story Card</button>
+        <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Story Profile</button>
       </div>
 
       <div className="report-preview-frame">
@@ -1959,7 +1987,7 @@ function DashboardReport({
       <div className="flex flex-wrap gap-3">
         <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
         <button onClick={onPrintReport} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Print Report / PDF</button>
-        {onShareCard ? <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Story Card</button> : null}
+        {onShareCard ? <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Story Profile</button> : null}
         {extraActions}
         {onSave ? <button onClick={onSave} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">{saveLabel}</button> : null}
       </div>
