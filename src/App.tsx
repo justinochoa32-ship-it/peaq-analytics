@@ -1456,6 +1456,36 @@ function svgLineGroup(lines: string[], x: number, y: number, lineHeight: number,
   return `<text x="${x}" y="${y}" ${attrs}>${tspans}</text>`;
 }
 
+let cachedSvgWordmarkHref: string | null = null;
+
+function readBlobAsDataUri(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Logo export failed."));
+    };
+    reader.onerror = () => reject(reader.error || new Error("Logo export failed."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function getSvgWordmarkHref(): Promise<string> {
+  if (cachedSvgWordmarkHref) return cachedSvgWordmarkHref;
+
+  const response = await fetch(brandAssets.wordmarkWhite);
+  if (!response.ok) throw new Error("Logo export failed.");
+  cachedSvgWordmarkHref = await readBlobAsDataUri(await response.blob());
+  return cachedSvgWordmarkHref;
+}
+
+function svgBrandWordmark(x: number, y: number, width: number, height: number, href = brandAssets.wordmarkWhite): string {
+  return `<image href="${href}" x="${x}" y="${y}" width="${width}" height="${height}" preserveAspectRatio="xMinYMid meet"/>`;
+}
+
 function svgScoreBar(x: number, y: number, width: number, score: NullableNumber | undefined): string {
   const fillWidth = isFiniteNumber(score) ? (width * clamp(score, 0, 100)) / 100 : 0;
   return `<rect x="${x}" y="${y}" width="${width}" height="16" rx="8" fill="#e5e7eb"/><rect x="${x}" y="${y}" width="${fillWidth}" height="16" rx="8" fill="${shareScoreColor(score)}"/>`;
@@ -1471,7 +1501,7 @@ function svgStarRating(x: number, y: number, rating: NullableNumber | undefined)
   `;
 }
 
-function buildShareCardSvg(data: AthleteData, profile: Profile): string {
+function buildShareCardSvg(data: AthleteData, profile: Profile, wordmarkHref = brandAssets.wordmarkWhite): string {
   const athleteName = data.name || "Athlete Name";
   const nameLines = splitSvgText(athleteName, 16, 2);
   const meta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
@@ -1520,8 +1550,8 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
       <rect width="1080" height="1920" fill="#f1f5f9"/>
       <rect x="50" y="45" width="980" height="285" rx="46" fill="#231f20"/>
-      <text x="78" y="115" font-family="Inter, Arial, sans-serif" font-size="31" font-weight="900" fill="#ffffff" letter-spacing="3">PEAQ</text>
-      <text x="190" y="115" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#8ed5f5" letter-spacing="8">PEAQ PROFILE</text>
+      ${svgBrandWordmark(78, 74, 126, 42, wordmarkHref)}
+      <text x="225" y="110" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#8ed5f5" letter-spacing="8">PEAQ PROFILE</text>
       <rect x="785" y="92" width="190" height="170" rx="30" fill="#ffffff"/>
       <text x="880" y="140" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#64748b" letter-spacing="4">OVERALL</text>
       <text x="880" y="220" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="80" font-weight="900" fill="#020617">${shareScoreText(profile.overallScore)}</text>
@@ -1556,8 +1586,8 @@ function getShareCardFileName(data: AthleteData): string {
   return `${slugify(data.name || "peaq-profile") || "peaq-profile"}-story-profile.png`;
 }
 
-function renderShareCardPngBlob(data: AthleteData, profile: Profile): Promise<Blob> {
-  const svg = buildShareCardSvg(data, profile);
+async function renderShareCardPngBlob(data: AthleteData, profile: Profile): Promise<Blob> {
+  const svg = buildShareCardSvg(data, profile, await getSvgWordmarkHref());
   const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const svgUrl = URL.createObjectURL(svgBlob);
   const image = new Image();
@@ -1661,7 +1691,7 @@ function svgProgressCardValue(value: string, x: number, y: number, maxLength = 3
   return svgLineGroup(splitSvgText(value, maxLength, maxLines), x, y, 27, 'font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#020617"');
 }
 
-function buildProgressStorySvg(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): string {
+function buildProgressStorySvg(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport, wordmarkHref = brandAssets.wordmarkWhite): string {
   const metricRows = getProgressRows(progressMetricKeys, reportA, reportB);
   const bucketRows = getProgressRows(progressBucketKeys, reportA, reportB);
   const summaryRows = getProgressSummaryRows(reportA, reportB);
@@ -1732,8 +1762,8 @@ function buildProgressStorySvg(athlete: AthleteProfileRecord, reportA: SavedRepo
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
       <rect width="1080" height="1920" fill="#f8fafc"/>
       <rect x="42" y="38" width="996" height="260" rx="36" fill="#231f20"/>
-      <text x="76" y="105" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#ffffff">PEAQ</text>
-      <text x="155" y="105" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#ffffff" opacity="0.58" letter-spacing="8">PEAQ PROGRESS REPORT</text>
+      ${svgBrandWordmark(76, 76, 108, 36, wordmarkHref)}
+      <text x="212" y="104" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#ffffff" opacity="0.58" letter-spacing="8">PEAQ PROGRESS REPORT</text>
       <rect x="760" y="98" width="248" height="82" rx="24" fill="#ffffff"/>
       <text x="884" y="132" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b">COMPARISON</text>
       <text x="884" y="162" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#020617">2 Reports</text>
@@ -1772,8 +1802,8 @@ function getProgressStoryFileName(athlete: AthleteProfileRecord): string {
   return `${slugify(athlete.name || "peaq-progress") || "peaq-progress"}-progress-story.png`;
 }
 
-function renderProgressStoryPngBlob(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): Promise<Blob> {
-  const svg = buildProgressStorySvg(athlete, reportA, reportB);
+async function renderProgressStoryPngBlob(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): Promise<Blob> {
+  const svg = buildProgressStorySvg(athlete, reportA, reportB, await getSvgWordmarkHref());
   const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const svgUrl = URL.createObjectURL(svgBlob);
   const image = new Image();
@@ -2073,7 +2103,25 @@ function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteDa
 }
 
 function ProgressStoryExport({ athlete, reportA, reportB, onBack }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void }) {
-  const previewSrc = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildProgressStorySvg(athlete, reportA, reportB))}`, [athlete, reportA, reportB]);
+  const fallbackPreviewSrc = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildProgressStorySvg(athlete, reportA, reportB))}`, [athlete, reportA, reportB]);
+  const [previewSrc, setPreviewSrc] = useState(fallbackPreviewSrc);
+
+  useEffect(() => {
+    let isActive = true;
+    setPreviewSrc(fallbackPreviewSrc);
+
+    void getSvgWordmarkHref()
+      .then((wordmarkHref) => {
+        if (isActive) setPreviewSrc(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildProgressStorySvg(athlete, reportA, reportB, wordmarkHref))}`);
+      })
+      .catch(() => {
+        if (isActive) setPreviewSrc(fallbackPreviewSrc);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [athlete, fallbackPreviewSrc, reportA, reportB]);
 
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
