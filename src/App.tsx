@@ -18,7 +18,7 @@ type BucketKey = "athleticExpression" | "power" | "strength" | "efficiency";
 type ComparisonKey = "overall" | "rating" | MetricKey | BucketKey;
 type AthleteDataKey = "name" | "sex" | "date" | "dob" | "sport" | "position" | "height" | "bodyweight" | "sprint10" | "drill505" | "cmjHeight" | "mRsi" | "trapBarE1RM";
 type NullableNumber = number | null;
-type ViewName = "auth" | "workspace" | "coach-profile" | "guide" | "print" | "share-card" | "progress-print" | "builder" | "csv" | "athlete" | "saved-report";
+type ViewName = "auth" | "workspace" | "coach-profile" | "guide" | "print" | "share-card" | "progress-print" | "progress-share-card" | "builder" | "csv" | "athlete" | "saved-report";
 
 type AthleteData = Record<AthleteDataKey, string>;
 
@@ -235,6 +235,12 @@ interface ProgressRow {
   valueA: NullableNumber;
   valueB: NullableNumber;
   change: ComparisonChange;
+}
+
+interface ProgressSummaryRow {
+  label: string;
+  from: string;
+  to: string;
 }
 
 interface CsvRow extends Partial<Record<AthleteDataKey, string>> {
@@ -1629,6 +1635,211 @@ async function saveShareCardPng(data: AthleteData, profile: Profile): Promise<vo
   }
 }
 
+function getProgressSummaryRows(reportA: SavedReport, reportB: SavedReport): ProgressSummaryRow[] {
+  return [
+    { label: "Archetype", from: reportA.archetype, to: reportB.archetype },
+    { label: "Status", from: reportA.status, to: reportB.status },
+  ];
+}
+
+function progressToneColors(tone: string): { fill: string; text: string } {
+  if (tone.includes("emerald")) return { fill: "#dcfce7", text: "#166534" };
+  if (tone.includes("rose")) return { fill: "#ffe4e6", text: "#be123c" };
+  if (tone.includes("blue")) return { fill: "#dbeafe", text: "#1d4ed8" };
+  return { fill: "#e2e8f0", text: "#475569" };
+}
+
+function svgChangePill(x: number, y: number, width: number, label: string, tone: string): string {
+  const colors = progressToneColors(tone);
+  return `
+    <rect x="${x}" y="${y}" width="${width}" height="34" rx="17" fill="${colors.fill}"/>
+    <text x="${x + width / 2}" y="${y + 23}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="900" fill="${colors.text}">${escapeSvgText(label)}</text>
+  `;
+}
+
+function svgProgressCardValue(value: string, x: number, y: number, maxLength = 34, maxLines = 1): string {
+  return svgLineGroup(splitSvgText(value, maxLength, maxLines), x, y, 27, 'font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#020617"');
+}
+
+function buildProgressStorySvg(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): string {
+  const metricRows = getProgressRows(progressMetricKeys, reportA, reportB);
+  const bucketRows = getProgressRows(progressBucketKeys, reportA, reportB);
+  const summaryRows = getProgressSummaryRows(reportA, reportB);
+  const ratingMetric = getComparisonMetric("rating");
+  const overallMetric = getComparisonMetric("overall");
+  const ratingChange = getComparisonChange(ratingMetric, reportA, reportB);
+  const overallChange = getComparisonChange(overallMetric, reportA, reportB);
+  const nameLines = splitSvgText(athlete.name || "Athlete Name", 18, 2);
+  const reportDirection = `Report A (${formatDate(reportA.date)}) → Report B (${formatDate(reportB.date)})`;
+  const summaryCards = summaryRows.map((row, index) => {
+    const y = 406 + index * 76;
+    const changed = row.from !== row.to;
+    const value = `${row.from || "—"} → ${row.to || "—"}`;
+    return `
+      <rect x="66" y="${y}" width="948" height="66" rx="18" fill="#f8fafc"/>
+      <text x="84" y="${y + 26}" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="900" fill="#64748b" letter-spacing="1">${escapeSvgText(row.label.toUpperCase())}</text>
+      ${svgProgressCardValue(value, 84, y + 54, 52)}
+      ${svgChangePill(872, y + 17, 116, changed ? "Changed" : "No Change", changed ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-600")}
+    `;
+  }).join("");
+
+  const scoreCards = [
+    {
+      label: "Rating",
+      value: `${formatComparisonValue(getComparisonValue(reportA, "rating"), ratingMetric)} → ${formatComparisonValue(getComparisonValue(reportB, "rating"), ratingMetric)}`,
+      change: ratingChange,
+      x: 66,
+    },
+    {
+      label: "Overall",
+      value: `${formatComparisonValue(getComparisonValue(reportA, "overall"), overallMetric)} → ${formatComparisonValue(getComparisonValue(reportB, "overall"), overallMetric)}`,
+      change: overallChange,
+      x: 556,
+    },
+  ].map((item) => `
+    <rect x="${item.x}" y="658" width="458" height="105" rx="18" fill="#f8fafc"/>
+    <text x="${item.x + 18}" y="696" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#64748b">${escapeSvgText(item.label)}</text>
+    <text x="${item.x + 18}" y="737" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="900" fill="#020617">${escapeSvgText(item.value)}</text>
+    ${svgChangePill(item.x + 18, 746, 178, `${item.change.label} ${item.change.value}`, item.change.tone)}
+  `).join("");
+
+  const metricRowsSvg = metricRows.map((row, index) => {
+    const y = 982 + index * 76;
+    return `
+      <line x1="68" y1="${y}" x2="1012" y2="${y}" stroke="#e2e8f0" stroke-width="2"/>
+      <text x="94" y="${y + 34}" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#020617">${escapeSvgText(row.metric.label)}</text>
+      <text x="94" y="${y + 58}" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="#64748b">${row.metric.direction === "lower" ? "Lower is better" : "Higher is better"}</text>
+      <text x="420" y="${y + 48}" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#1f2937">${escapeSvgText(formatComparisonValue(row.valueA, row.metric))}</text>
+      <text x="600" y="${y + 48}" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#1f2937">${escapeSvgText(formatComparisonValue(row.valueB, row.metric))}</text>
+      ${svgChangePill(782, y + 18, 118, row.change.label, row.change.tone)}
+      <text x="918" y="${y + 48}" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#1f2937">${escapeSvgText(row.change.value)}</text>
+    `;
+  }).join("");
+
+  const bucketRowsSvg = bucketRows.map((row, index) => {
+    const x = index % 2 === 0 ? 66 : 556;
+    const y = index < 2 ? 1490 : 1612;
+    return `
+      <rect x="${x}" y="${y}" width="458" height="100" rx="18" fill="#f8fafc"/>
+      <text x="${x + 18}" y="${y + 34}" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#020617">${escapeSvgText(row.metric.label)}</text>
+      ${svgChangePill(x + 312, y + 23, 130, row.change.label, row.change.tone)}
+      <text x="${x + 18}" y="${y + 66}" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="700" fill="#64748b">${escapeSvgText(formatComparisonValue(row.valueA, row.metric))} → ${escapeSvgText(formatComparisonValue(row.valueB, row.metric))}</text>
+      <text x="${x + 18}" y="${y + 90}" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#1f2937">${escapeSvgText(row.change.value)}</text>
+    `;
+  }).join("");
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+      <rect width="1080" height="1920" fill="#f8fafc"/>
+      <rect x="42" y="38" width="996" height="260" rx="36" fill="#231f20"/>
+      <text x="76" y="105" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#ffffff">PEAQ</text>
+      <text x="155" y="105" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#ffffff" opacity="0.58" letter-spacing="8">PEAQ PROGRESS REPORT</text>
+      <rect x="760" y="98" width="248" height="82" rx="24" fill="#ffffff"/>
+      <text x="884" y="132" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b">COMPARISON</text>
+      <text x="884" y="162" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#020617">2 Reports</text>
+      ${svgLineGroup(nameLines, 76, 188, 58, 'font-family="Inter, Arial, sans-serif" font-size="62" font-weight="900" fill="#ffffff"')}
+      <text x="76" y="250" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#ffffff" opacity="0.68">${escapeSvgText(reportDirection)}</text>
+
+      <rect x="42" y="330" width="996" height="220" rx="24" fill="#ffffff" stroke="#dbe3ed" stroke-width="2"/>
+      <text x="66" y="376" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="7">PROFILE CHANGES</text>
+      ${summaryCards}
+
+      <rect x="42" y="584" width="996" height="204" rx="24" fill="#ffffff" stroke="#dbe3ed" stroke-width="2"/>
+      <text x="66" y="630" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="7">SCORE CHANGES</text>
+      ${scoreCards}
+
+      <rect x="42" y="822" width="996" height="548" rx="24" fill="#ffffff" stroke="#dbe3ed" stroke-width="2"/>
+      <text x="66" y="868" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="7">METRIC CHANGES</text>
+      <text x="66" y="910" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="900" fill="#020617">Testing Outputs</text>
+      <text x="1008" y="906" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="800" fill="#64748b">Sprint and 505: lower is better.</text>
+      <rect x="68" y="936" width="944" height="48" rx="10" fill="#020617"/>
+      <text x="94" y="966" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="900" fill="#ffffff" opacity="0.62">METRIC</text>
+      <text x="420" y="966" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="900" fill="#ffffff" opacity="0.62">REPORT A</text>
+      <text x="600" y="966" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="900" fill="#ffffff" opacity="0.62">REPORT B</text>
+      <text x="782" y="966" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="900" fill="#ffffff" opacity="0.62">CHANGE</text>
+      ${metricRowsSvg}
+
+      <rect x="42" y="1404" width="996" height="352" rx="24" fill="#ffffff" stroke="#dbe3ed" stroke-width="2"/>
+      <text x="66" y="1452" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="7">BUCKET CHANGES</text>
+      ${bucketRowsSvg}
+
+      <text x="540" y="1858" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#94a3b8" letter-spacing="2">POWERED BY  <tspan fill="#1e94d2">PEAQ ANALYTICS</tspan></text>
+    </svg>
+  `;
+}
+
+function getProgressStoryFileName(athlete: AthleteProfileRecord): string {
+  return `${slugify(athlete.name || "peaq-progress") || "peaq-progress"}-progress-story.png`;
+}
+
+function renderProgressStoryPngBlob(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): Promise<Blob> {
+  const svg = buildProgressStorySvg(athlete, reportA, reportB);
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  const image = new Image();
+
+  return new Promise((resolve, reject) => {
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1080;
+      canvas.height = 1920;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        URL.revokeObjectURL(svgUrl);
+        reject(new Error("Canvas is unavailable."));
+        return;
+      }
+      context.drawImage(image, 0, 0);
+      URL.revokeObjectURL(svgUrl);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("PNG export failed."));
+          return;
+        }
+        resolve(blob);
+      }, "image/png");
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+      reject(new Error("Image export failed."));
+    };
+
+    image.src = svgUrl;
+  });
+}
+
+async function saveProgressStoryPng(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): Promise<void> {
+  try {
+    const blob = await renderProgressStoryPngBlob(athlete, reportA, reportB);
+    const fileName = getProgressStoryFileName(athlete);
+    const file = new File([blob], fileName, { type: "image/png" });
+    const shareData: ShareData = {
+      title: "PEAQ Progress Story",
+      text: `${athlete.name || "Athlete"} PEAQ Progress Report`,
+      files: [file],
+    };
+    const shareNavigator = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+
+    if (typeof shareNavigator.share === "function" && typeof shareNavigator.canShare === "function" && shareNavigator.canShare({ files: [file] })) {
+      try {
+        await shareNavigator.share(shareData);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+
+    downloadBlob(blob, fileName);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    window.alert("Could not create the progress story image.");
+  }
+}
+
 function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile: Profile; onBack: () => void }) {
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
   const rating = isFiniteNumber(profile.rating) ? profile.rating : 0;
@@ -1861,7 +2072,26 @@ function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteDa
   );
 }
 
-function ProgressReport({ athlete, reportA, reportB, onBack }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void }) {
+function ProgressStoryExport({ athlete, reportA, reportB, onBack }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void }) {
+  const previewSrc = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildProgressStorySvg(athlete, reportA, reportB))}`, [athlete, reportA, reportB]);
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <button onClick={onBack} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50">Back</button>
+          <button onClick={() => void saveProgressStoryPng(athlete, reportA, reportB)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-[#1678ad]">Save Progress Story</button>
+        </div>
+
+        <section className="mx-auto aspect-[9/16] overflow-hidden rounded-[2rem] bg-slate-100 shadow-2xl" style={{ width: "min(100%, 430px, calc(56.25dvh - 1.40625rem))" }}>
+          <img src={previewSrc} alt={`${athlete.name} PEAQ progress story`} className="h-full w-full object-cover" />
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function ProgressReport({ athlete, reportA, reportB, onBack, onShareCard }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void; onShareCard: () => void }) {
   const metricRows = getProgressRows(progressMetricKeys, reportA, reportB);
   const bucketRows = getProgressRows(progressBucketKeys, reportA, reportB);
   const ratingMetric = getComparisonMetric("rating");
@@ -1894,6 +2124,7 @@ function ProgressReport({ athlete, reportA, reportB, onBack }: { athlete: Athlet
       <div className="no-print mx-auto mb-4 flex max-w-7xl flex-wrap gap-3">
         <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
         <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
+        <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Progress Story</button>
       </div>
 
       <div className="report-preview-frame">
@@ -2927,7 +3158,7 @@ function CsvQuickFixSelect({ label, value, onChange, children }: { label: string
   );
 }
 
-function ReportComparison({ reports, onPrintComparison }: { reports: SavedReport[]; onPrintComparison?: (reportA: SavedReport, reportB: SavedReport) => void }) {
+function ReportComparison({ reports, onPrintComparison, onShareComparison }: { reports: SavedReport[]; onPrintComparison?: (reportA: SavedReport, reportB: SavedReport) => void; onShareComparison?: (reportA: SavedReport, reportB: SavedReport) => void }) {
   const [reportAId, setReportAId] = useState(reports[1]?.id || reports[0]?.id || "");
   const [reportBId, setReportBId] = useState(reports[0]?.id || "");
 
@@ -2949,7 +3180,7 @@ function ReportComparison({ reports, onPrintComparison }: { reports: SavedReport
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">Report Comparison</p>
           <h2 className="text-2xl font-black">Compare Reports</h2>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[640px] lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+        <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[760px] lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end">
           <SelectField label="Report A (From)" value={reportA.id} onChange={setReportAId}>
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
@@ -2957,6 +3188,7 @@ function ReportComparison({ reports, onPrintComparison }: { reports: SavedReport
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
           {onPrintComparison ? <button onClick={() => onPrintComparison(reportA, reportB)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#167bb0]">Print Progress Report</button> : null}
+          {onShareComparison ? <button onClick={() => onShareComparison(reportA, reportB)} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Save Progress Story</button> : null}
         </div>
       </div>
 
@@ -3114,6 +3346,7 @@ function AthleteProfile({
   onRestore,
   onOpenReport,
   onPrintComparison,
+  onShareComparison,
   onUpdateAthlete,
 }: {
   athlete: AthleteProfileRecord;
@@ -3123,6 +3356,7 @@ function AthleteProfile({
   onRestore: () => void;
   onOpenReport: (report: SavedReport) => void;
   onPrintComparison: (reportA: SavedReport, reportB: SavedReport) => void;
+  onShareComparison: (reportA: SavedReport, reportB: SavedReport) => void;
   onUpdateAthlete: (athleteId: string, updates: AthleteProfileForm) => void;
 }) {
   const archived = isArchivedAthlete(athlete);
@@ -3158,7 +3392,7 @@ function AthleteProfile({
         {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
         <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
-        <ReportComparison reports={athlete.reports} onPrintComparison={onPrintComparison} />
+        <ReportComparison reports={athlete.reports} onPrintComparison={onPrintComparison} onShareComparison={onShareComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
       </div>
     </main>
@@ -4123,6 +4357,11 @@ export default function AthleteProfilingMVP() {
     navigate("progress-print", { athleteId: athlete.id, reportId: null });
   }
 
+  function openProgressStory(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): void {
+    setProgressPrint({ athlete, reportA, reportB });
+    navigate("progress-share-card", { athleteId: athlete.id, reportId: null });
+  }
+
   function saveReport(data: AthleteData, profile: Profile): void {
     if (!coach || !data.name.trim()) {
       alert("Add an athlete name before saving this report.");
@@ -4292,13 +4531,14 @@ export default function AthleteProfilingMVP() {
   if (view === "guide") return <ScoringGuide onBack={goWorkspace} />;
   if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} onShareCard={() => openShareCard(printData, printProfile, { view: "print", selectedAthleteId, selectedReportId })} />;
   if (view === "share-card" && printData && printProfile) return <ShareCardExport data={printData} profile={printProfile} onBack={returnFromShareCard} />;
-  if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} />;
+  if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} onShareCard={() => openProgressStory(progressPrint.athlete, progressPrint.reportA, progressPrint.reportB)} />;
+  if (view === "progress-share-card" && progressPrint) return <ProgressStoryExport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} />;
   if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => builderAthleteId && !builderReportId ? openAthlete(builderAthleteId) : goWorkspace()} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "builder", selectedAthleteId: builderAthleteId, selectedReportId: builderReportId })} mode={builderReportId ? "correction" : "new"} />;
   if (view === "csv") return <CsvImport coach={coach} onBack={goWorkspace} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); navigate("builder", { athleteId: null, reportId: null }); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return renderWorkspace(coach);
-    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} />;
+    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onShareComparison={(reportA, reportB) => openProgressStory(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
