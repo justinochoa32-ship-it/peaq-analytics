@@ -1238,12 +1238,6 @@ function SnapshotCard({ profile }: { profile: Profile }) {
   );
 }
 
-function compareScoreDescending<T extends { score: NullableNumber | undefined }>(a: T, b: T): number {
-  const scoreA = isFiniteNumber(a.score) ? a.score : -1;
-  const scoreB = isFiniteNumber(b.score) ? b.score : -1;
-  return scoreB - scoreA;
-}
-
 function shareScoreColor(score: NullableNumber | undefined): string {
   if (!isFiniteNumber(score)) return "#cbd5e1";
   if (score >= 80) return "#10b981";
