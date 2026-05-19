@@ -5,8 +5,22 @@ Run this checklist before merging beta-facing changes or inviting coaches to tes
 ## Setup
 
 - Open the latest `main` branch in StackBlitz or the local dev server.
+- Confirm Vercel has `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set for Production and Preview.
+- Confirm Supabase migrations `001` through `005` have been run in order.
 - Start with a fresh browser profile or clear localStorage when testing first-run behavior.
 - Also test once with existing localStorage data to confirm migrations/persistence still work.
+
+## Supabase Cloud Accounts
+
+- Sign up with a new coach account.
+- Confirm the account by email if email confirmation is enabled.
+- Sign in and confirm the workspace loads without a cloud error.
+- Refresh and confirm the coach stays signed in or can sign back in cleanly.
+- Edit Account Profile fields and confirm they persist after refresh.
+- Use Reset Password and confirm the email link returns to the app domain and allows a new password.
+- Log out and confirm the sign-in screen appears.
+- Check Supabase Table Editor and confirm rows appear for the signed-in coach in `profiles`, `athletes`, and `reports` after saving data.
+- Confirm Coach A cannot see Coach B data by signing in with a second test coach account.
 
 ## Coach Workspace
 
@@ -70,6 +84,20 @@ Run this checklist before merging beta-facing changes or inviting coaches to tes
 - Confirm Showing X of Y athletes updates.
 - Click Clear Filters and confirm the full list returns.
 - Confirm same-name athletes show DOB or secondary identity text.
+- Archive one athlete and confirm the profile is hidden from the active list.
+- Turn on Show archived and restore the athlete.
+- Select multiple athletes and confirm bulk archive/restore works.
+
+## Athlete And Coach Metadata
+
+- Open Account Profile.
+- Edit display name, organization, role/title, phone, website, location, and notes.
+- Refresh and confirm the coach profile edits persist.
+- Open an athlete profile.
+- Click Edit Details.
+- Edit display name, DOB, sport, team/school, position, graduation year, contact fields, and notes.
+- Refresh and confirm the athlete profile edits persist.
+- Confirm saved reports still display their original report data correctly after metadata edits.
 
 ## CSV Import
 
@@ -89,12 +117,14 @@ Run this checklist before merging beta-facing changes or inviting coaches to tes
 
 - Open a saved report and click Print Report / PDF.
 - Confirm the one-page PEAQ Profile remains landscape, complete, and not cut off.
+- Save Story Profile and confirm the PNG uses the PEAQ logo and the vertical story layout.
 - Save two reports for the same athlete.
 - Open the athlete profile and compare Report A to Report B.
 - Confirm Report A -> Report B direction is clear.
 - Confirm sprint and 505 decreases show as improvements.
 - Confirm other metric increases show as improvements.
 - Click Print Progress Report and confirm the separate progress report opens.
+- Save Progress Story and confirm the PNG uses the PEAQ logo and the vertical progress layout.
 
 ## Scoring Guide
 
