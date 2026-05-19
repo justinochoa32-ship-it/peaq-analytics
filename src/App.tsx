@@ -1302,33 +1302,36 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
   const athleteName = data.name || "Athlete Name";
   const nameLines = splitSvgText(athleteName, 16, 2);
   const meta = [data.sex, data.sport, data.position, data.date].filter(Boolean).join(" - ");
+  const profileMeta = [
+    profile.archetype,
+    isFiniteNumber(profile.rating) ? `${profile.rating.toFixed(1)} stars` : null,
+    profile.status,
+  ].filter((value): value is string => Boolean(value)).join(" - ");
   const bucketHighlights = [...profile.bucketItems].sort(compareScoreDescending).slice(0, 2);
   const metricHighlights = [...profile.scoreList].sort(compareScoreDescending).slice(0, 3);
-  const summaryLines = splitSvgText(getCoachSummaryText(data, profile), 44, 4);
   const limiterLines = splitSvgText(profile.primaryLimiter, 18, 2);
   const strengthLines = splitSvgText(profile.greenFlagOne, 18, 2);
   const nameText = svgLineGroup(nameLines, 110, 265, 82, 'font-family="Inter, Arial, sans-serif" font-size="80" font-weight="900" fill="#ffffff"');
-  const summaryText = svgLineGroup(summaryLines, 110, 885, 38, 'font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700" fill="#334155"');
   const limiterText = svgLineGroup(limiterLines, 150, 630, 38, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
   const strengthText = svgLineGroup(strengthLines, 595, 630, 38, 'font-family="Inter, Arial, sans-serif" font-size="34" font-weight="900" fill="#020617"');
 
   const bucketCards = bucketHighlights.map((bucket, index) => {
     const x = 110 + index * 435;
     return `
-      <rect x="${x}" y="1120" width="395" height="230" rx="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="${x + 34}" y="1195" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="3">${escapeSvgText(bucket.label.toUpperCase())}</text>
-      <text x="${x + 34}" y="1274" font-family="Inter, Arial, sans-serif" font-size="74" font-weight="900" fill="#020617">${shareScoreText(bucket.score)}</text>
-      ${svgScoreBar(x + 34, 1314, 310, bucket.score)}
+      <rect x="${x}" y="835" width="395" height="250" rx="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="${x + 34}" y="912" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="3">${escapeSvgText(bucket.label.toUpperCase())}</text>
+      <text x="${x + 34}" y="998" font-family="Inter, Arial, sans-serif" font-size="82" font-weight="900" fill="#020617">${shareScoreText(bucket.score)}</text>
+      ${svgScoreBar(x + 34, 1040, 310, bucket.score)}
     `;
   }).join("");
 
   const metricRows = metricHighlights.map((item, index) => {
-    const y = 1498 + index * 104;
+    const y = 1270 + index * 142;
     return `
-      <text x="126" y="${y}" font-family="Inter, Arial, sans-serif" font-size="29" font-weight="900" fill="#020617">${escapeSvgText(item.label)}</text>
-      <text x="126" y="${y + 38}" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800" fill="#64748b">${escapeSvgText(item.display)}</text>
-      <text x="805" y="${y + 18}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="52" font-weight="900" fill="#020617">${shareScoreText(item.score)}</text>
-      ${svgScoreBar(860, y - 12, 115, item.score)}
+      <text x="126" y="${y}" font-family="Inter, Arial, sans-serif" font-size="35" font-weight="900" fill="#020617">${escapeSvgText(item.label)}</text>
+      <text x="126" y="${y + 44}" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="800" fill="#64748b">${escapeSvgText(item.display)}</text>
+      <text x="790" y="${y + 26}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="60" font-weight="900" fill="#020617">${shareScoreText(item.score)}</text>
+      ${svgScoreBar(850, y + 2, 125, item.score)}
     `;
   }).join("");
 
@@ -1342,20 +1345,18 @@ function buildShareCardSvg(data: AthleteData, profile: Profile): string {
       <text x="855" y="178" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">OVERALL</text>
       <text x="855" y="258" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="86" font-weight="900" fill="#020617">${shareScoreText(profile.overallScore)}</text>
       ${nameText}
-      <text x="110" y="430" font-family="Inter, Arial, sans-serif" font-size="31" font-weight="800" fill="#ffffff" opacity="0.65">${escapeSvgText(meta || "PEAQ Profile")}</text>
+      <text x="110" y="386" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="900" fill="#8ed5f5">${escapeSvgText(profileMeta || "PEAQ Profile")}</text>
+      <text x="110" y="440" font-family="Inter, Arial, sans-serif" font-size="31" font-weight="800" fill="#ffffff" opacity="0.65">${escapeSvgText(meta || "PEAQ Profile")}</text>
       <rect x="110" y="555" width="390" height="190" rx="34" fill="#ffffff"/>
       <text x="150" y="602" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">PRIMARY LIMITER</text>
       ${limiterText}
       <rect x="555" y="555" width="390" height="190" rx="34" fill="#ffffff"/>
       <text x="595" y="602" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="4">CURRENT STRENGTH</text>
       ${strengthText}
-      <rect x="70" y="805" width="940" height="230" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="110" y="858" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">COACH SUMMARY</text>
-      ${summaryText}
-      <text x="110" y="1086" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TOP PROFILE BUCKETS</text>
+      <text x="110" y="795" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TOP PROFILE BUCKETS</text>
       ${bucketCards}
-      <rect x="70" y="1400" width="940" height="365" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
-      <text x="110" y="1455" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TESTED METRICS</text>
+      <rect x="70" y="1140" width="940" height="610" rx="42" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/>
+      <text x="110" y="1205" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="900" fill="#64748b" letter-spacing="5">TESTED METRICS</text>
       ${metricRows}
       <text x="540" y="1858" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#94a3b8" letter-spacing="4">POWERED BY  <tspan fill="#1e94d2">PEAQ ANALYTICS</tspan></text>
     </svg>
@@ -1408,6 +1409,7 @@ function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile
   const bucketHighlights = [...profile.bucketItems].sort(compareScoreDescending).slice(0, 2);
   const metricHighlights = [...profile.scoreList].sort(compareScoreDescending).slice(0, 3);
   const athleteMeta = [data.sex, data.sport, data.position, data.date].filter(Boolean).join(" • ");
+  const profileMeta = [profile.archetype, isFiniteNumber(profile.rating) ? `${profile.rating.toFixed(1)} stars` : null, profile.status].filter((value): value is string => Boolean(value)).join(" • ");
 
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
@@ -1427,6 +1429,7 @@ function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile
                     <span className="text-[10px] font-black uppercase tracking-[0.22em] text-[#8ed5f5]">Profile</span>
                   </div>
                   <h1 className="mt-7 text-4xl font-black leading-none tracking-tight">{data.name || "Athlete Name"}</h1>
+                  <p className="mt-3 text-xs font-black leading-5 text-[#8ed5f5]">{profileMeta || "PEAQ Profile"}</p>
                   <p className="mt-3 text-sm font-bold leading-5 text-white/60">{athleteMeta || "PEAQ Profile"}</p>
                 </div>
                 <div className="shrink-0 rounded-2xl bg-white px-4 py-3 text-center text-slate-950">
@@ -1445,11 +1448,6 @@ function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile
                 <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Current Strength</p>
                 <p className="mt-2 text-lg font-black leading-tight text-slate-950">{profile.greenFlagOne}</p>
               </div>
-            </div>
-
-            <div className="rounded-3xl bg-white p-4 shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Coach Summary</p>
-              <p className="mt-2 overflow-hidden text-sm font-semibold leading-6 text-slate-600" style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 4 }}>{getCoachSummaryText(data, profile)}</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
