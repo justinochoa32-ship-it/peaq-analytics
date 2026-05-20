@@ -8,8 +8,9 @@ Create a separate Vercel project from this same GitHub repository and set:
 
 - Root directory: `marketing`
 - Framework preset: Other
-- Build command: none
-- Output directory: `.`
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment variables: none
 
 Domain mapping:
 
