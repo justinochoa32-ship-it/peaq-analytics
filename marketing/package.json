@@ -1,0 +1,8 @@
+{
+  "name": "peaq-analytics-marketing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ./scripts/build-static.mjs"
+  }
+}
