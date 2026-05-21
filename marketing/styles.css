@@ -158,10 +158,10 @@ img {
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.9fr);
-  gap: 72px;
-  align-items: center;
-  padding: 76px 0 70px;
+  grid-template-columns: minmax(0, 0.92fr) minmax(520px, 1fr);
+  gap: 64px;
+  align-items: start;
+  padding: 64px 0 74px;
 }
 
 .hero-copy h1,
@@ -233,6 +233,12 @@ img {
   border-radius: 28px;
   overflow: hidden;
   box-shadow: var(--shadow);
+}
+
+.hero-report-preview {
+  justify-self: end;
+  width: 100%;
+  max-width: 680px;
 }
 
 .preview-hero {
@@ -317,6 +323,22 @@ img {
   grid-template-columns: repeat(2, 1fr);
   gap: 18px;
   padding: 26px;
+}
+
+.hero-report-preview .preview-grid {
+  gap: 14px;
+  padding: 22px;
+}
+
+.hero-report-preview .dark-panel,
+.hero-report-preview .identity-tile,
+.hero-report-preview .metric-panel {
+  padding: 18px;
+}
+
+.hero-report-preview .dark-panel strong,
+.hero-report-preview .identity-tile strong {
+  font-size: 20px;
 }
 
 .dark-panel,
@@ -437,6 +459,11 @@ img {
   line-height: 1.08;
 }
 
+.hero-report-preview .metric-panel h3 {
+  margin: 14px 0;
+  font-size: 22px;
+}
+
 .report-metric-panel .mini-metrics {
   grid-template-columns: repeat(3, 1fr);
 }
@@ -481,10 +508,19 @@ img {
   background: var(--panel);
 }
 
+.hero-report-preview .bucket-strip {
+  gap: 10px;
+  padding: 14px;
+}
+
 .bucket-strip div {
   padding: 14px;
   border-radius: 14px;
   background: var(--white);
+}
+
+.hero-report-preview .bucket-strip div {
+  padding: 12px;
 }
 
 .bucket-strip strong {
@@ -492,6 +528,10 @@ img {
   margin-top: 8px;
   font-size: 26px;
   line-height: 1;
+}
+
+.hero-report-preview .bucket-strip strong {
+  font-size: 22px;
 }
 
 .bar {
