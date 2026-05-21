@@ -19,7 +19,7 @@
       <nav class="nav-links" aria-label="Primary navigation">
         <a href="#workflow">Workflow</a>
         <a href="#platform">Platform</a>
-        <a href="#sports">Sports</a>
+        <a href="#use-cases">Use Cases</a>
         <a href="#early-access">Early Access</a>
       </nav>
       <div class="header-actions">
@@ -318,19 +318,37 @@
               <span>Progress Reports</span>
               <em>Improved +34</em>
             </div>
-            <h3>Report A / Report B</h3>
+            <h3>Report A → Report B</h3>
+            <p class="comparison-subline">John Smith · 2026-04-01 → 2026-06-01</p>
             <div class="comparison-pair">
-              <div><span>Archetype</span><strong>Transfer-Limited to Complete Athlete</strong></div>
-              <div><span>Status</span><strong>Developmental to Complete Athlete</strong></div>
+              <div>
+                <span>Archetype</span>
+                <strong>Transfer-Limited → Complete Athlete</strong>
+                <em class="change-pill positive">Changed</em>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong>Developmental → Complete Athlete</strong>
+                <em class="change-pill positive">Changed</em>
+              </div>
             </div>
-            <div class="table-preview">
-              <div class="table-row table-head"><span>Area</span><span>Before</span><span>After</span><span>Change</span></div>
-              <div class="table-row"><span>Overall</span><span>57</span><span>91</span><span>+34</span></div>
-              <div class="table-row"><span>Rating</span><span>3.0</span><span>5.0</span><span>+2.0</span></div>
-              <div class="table-row"><span>Athletic Expression</span><span>44</span><span>89</span><span>+45</span></div>
-              <div class="table-row"><span>Power</span><span>46</span><span>86</span><span>+40</span></div>
-              <div class="table-row"><span>Strength</span><span>71</span><span>95</span><span>+24</span></div>
-              <div class="table-row"><span>Efficiency</span><span>58</span><span>90</span><span>+32</span></div>
+            <div class="comparison-score-grid">
+              <div><span>Rating</span><strong>3.0 stars → 5.0 stars</strong><em class="delta-pill positive">+2.0</em></div>
+              <div><span>Overall</span><strong>57 → 91</strong><em class="delta-pill positive">+34</em></div>
+            </div>
+            <div class="comparison-table">
+              <div class="comparison-row comparison-head"><span>Metric</span><span>Report A</span><span>Report B</span><span>Change</span></div>
+              <div class="comparison-row"><span>10-Yard Sprint</span><span>1.76 sec</span><span>1.62 sec</span><span><em class="delta-pill positive">Improved -0.14</em></span></div>
+              <div class="comparison-row"><span>505 Drill</span><span>2.25 sec</span><span>2.08 sec</span><span><em class="delta-pill positive">Improved -0.17</em></span></div>
+              <div class="comparison-row"><span>CMJ Height</span><span>16.6 in</span><span>22.4 in</span><span><em class="delta-pill positive">+5.8</em></span></div>
+              <div class="comparison-row"><span>mRSI</span><span>0.55</span><span>0.77</span><span><em class="delta-pill positive">+0.22</em></span></div>
+              <div class="comparison-row"><span>Relative Strength</span><span>1.96 xBW</span><span>2.24 xBW</span><span><em class="delta-pill positive">+0.28</em></span></div>
+            </div>
+            <div class="comparison-buckets">
+              <div><span>Athletic Expression</span><strong>44 → 89</strong><em>+45</em></div>
+              <div><span>Power</span><strong>46 → 86</strong><em>+40</em></div>
+              <div><span>Strength</span><strong>71 → 95</strong><em>+24</em></div>
+              <div><span>Efficiency</span><strong>58 → 90</strong><em>+32</em></div>
             </div>
           </article>
           <div class="feature-copy">
@@ -467,7 +485,7 @@
         </div>
       </section>
 
-      <section class="use-case-section section-shell">
+      <section id="use-cases" class="use-case-section section-shell">
         <div class="use-case-dark">
           <span class="section-label">Who It Serves</span>
           <h2>For coaches who need testing to create better conversations.</h2>
@@ -496,10 +514,10 @@
           </article>
           <article>
             <span class="icon-mark">✓</span>
-            <h3>Private coach cohort</h3>
+            <h3>Guided early access</h3>
             <p>
-              Access is intentionally limited so each coach gets a guided setup,
-              clean onboarding, and a direct feedback loop with PEAQ.
+              Early access includes setup support and a clear path from first import
+              to first report, so coaches can get useful output with their own athletes.
             </p>
           </article>
         </div>
@@ -524,8 +542,8 @@
           <span class="icon-mark">→</span>
           <h3>What happens after you request access</h3>
           <p class="domain-copy">
-            PEAQ stays selective so early-access coaches get a clean setup and a
-            useful first run with their own athletes.
+            Request access, share your testing workflow, and PEAQ will help get your
+            coach workspace ready for your first reports.
           </p>
           <div class="domain-row"><strong>1. Request access</strong><span>Send a quick note with your setting, sport, and testing workflow.</span></div>
           <div class="domain-row"><strong>2. Set up your workspace</strong><span>PEAQ prepares the coach login and workspace for your first athletes.</span></div>
