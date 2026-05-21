@@ -475,26 +475,38 @@ img {
 }
 
 .mini-metrics div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: space-between;
+  gap: 6px 12px;
+  min-height: 124px;
   padding: 16px;
   border-radius: 14px;
   background: var(--white);
 }
 
 .mini-metrics span {
+  grid-column: 1 / -1;
+  min-height: 34px;
   color: var(--ink);
   font-size: 13px;
+  line-height: 1.2;
 }
 
 .mini-metrics small {
+  grid-column: 1;
   display: block;
-  margin-top: 4px;
   color: var(--muted);
   font-weight: 850;
 }
 
 .mini-metrics strong {
-  float: right;
-  font-size: 18px;
+  grid-column: 2;
+  grid-row: 2 / 4;
+  align-self: end;
+  font-size: 22px;
+  line-height: 1;
+  text-align: right;
 }
 
 .bucket-strip {
@@ -514,24 +526,36 @@ img {
 }
 
 .bucket-strip div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-content: space-between;
+  gap: 8px 12px;
+  min-height: 114px;
   padding: 14px;
   border-radius: 14px;
   background: var(--white);
 }
 
 .hero-report-preview .bucket-strip div {
+  min-height: 108px;
   padding: 12px;
 }
 
 .bucket-strip strong {
+  grid-column: 1;
   display: block;
-  margin-top: 8px;
   font-size: 26px;
   line-height: 1;
 }
 
 .hero-report-preview .bucket-strip strong {
   font-size: 22px;
+}
+
+.mini-metrics .bar,
+.bucket-strip .bar {
+  grid-column: 1 / -1;
+  margin-top: 8px;
 }
 
 .bar {
@@ -952,6 +976,12 @@ img {
   color: var(--white);
 }
 
+.metric-row.metric-head span,
+.metric-row.metric-head span:first-child,
+.metric-row.metric-head span:nth-child(3) {
+  color: var(--white);
+}
+
 .metric-visual > p {
   margin: -8px 0 20px;
   color: var(--muted);
@@ -985,6 +1015,125 @@ img {
 .comparison-pair strong {
   font-size: 15px;
   line-height: 1.2;
+}
+
+.comparison-subline {
+  margin: -8px 0 18px;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.change-pill,
+.delta-pill {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.change-pill.positive,
+.delta-pill.positive {
+  background: #d7f8e3;
+  color: #0b7d46;
+}
+
+.comparison-score-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.comparison-score-grid div {
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.comparison-score-grid span,
+.comparison-buckets span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.comparison-score-grid strong,
+.comparison-buckets strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.comparison-table {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.comparison-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.85fr 0.85fr 1fr;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e8eef5;
+  color: #5d6a7f;
+  font-weight: 850;
+}
+
+.comparison-row:last-child {
+  border-bottom: 0;
+}
+
+.comparison-head {
+  min-height: 46px;
+  background: var(--navy);
+  color: var(--white);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.comparison-head span,
+.comparison-head span:first-child {
+  color: var(--white);
+}
+
+.comparison-row span:first-child {
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.comparison-buckets {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.comparison-buckets div {
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.comparison-buckets em {
+  display: block;
+  margin-top: 6px;
+  color: #15975c;
+  font-style: normal;
+  font-weight: 950;
 }
 
 .dashboard-visual .table-row {
@@ -1361,6 +1510,8 @@ img {
   .profile-tiles,
   .profile-card-grid,
   .comparison-pair,
+  .comparison-score-grid,
+  .comparison-buckets,
   .bucket-strip,
   .intake-flow,
   .workspace-stats,
@@ -1380,6 +1531,18 @@ img {
 
   .bucket-strip {
     padding: 14px;
+  }
+
+  .comparison-visual h3 {
+    font-size: 28px;
+  }
+
+  .comparison-table {
+    overflow-x: auto;
+  }
+
+  .comparison-row {
+    min-width: 620px;
   }
 
   .workflow-grid,
