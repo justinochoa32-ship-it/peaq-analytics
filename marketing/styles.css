@@ -163,10 +163,10 @@ img {
 
 .hero-section {
   display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(520px, 1fr);
-  gap: 64px;
-  align-items: start;
-  padding: 64px 0 74px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(520px, 1fr);
+  gap: 58px;
+  align-items: center;
+  padding: 68px 0 76px;
   min-width: 0;
 }
 
@@ -196,8 +196,8 @@ img {
 }
 
 .hero-copy h1 {
-  max-width: 680px;
-  font-size: 68px;
+  max-width: 720px;
+  font-size: 64px;
 }
 
 .hero-copy p,
@@ -236,7 +236,7 @@ img {
 }
 
 .hero-copy .cta-row {
-  margin-top: 34px;
+  margin-top: 30px;
 }
 
 .coach-login-mobile {
