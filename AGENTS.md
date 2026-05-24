@@ -1,30 +1,21 @@
-# PEAQ Analytics Project Instructions
+# PEAQ Analytics Codex Rules
 
-This is an athlete performance profiling app for basketball/performance coaches.
+PEAQ Analytics is a coach-facing athlete performance profiling app for basketball and performance coaches. Work should stay small, practical, and easy to review.
 
-## Product direction
-The app should support:
-- Coach account / private workspace
-- Manual athlete report builder
-- Athlete profile dashboard
-- One-page PDF report
-- Athlete library
-- Saved report history
-- CSV import from the app's template
-- Eventually: report comparison, athlete trends, provider-specific imports, and real database-backed accounts
+## Guardrails
 
-## Important constraints
-- Do not rewrite the entire app unless explicitly asked.
-- Prefer small, high-confidence changes.
-- Preserve the current visual style: slate background, rounded cards, dark hero sections, clean coach-facing dashboard tone.
-- Preserve the current scoring model unless explicitly asked.
-- Do not remove the CSV import, coach workspace, athlete library, report builder, scoring guide, or PDF report flows.
+- Do not rewrite the app unless explicitly asked.
+- Prefer narrow, high-confidence changes that preserve the current workflow.
+- Preserve the existing visual tone: slate background, rounded cards, dark hero/dashboard sections, and clean coach-facing UI.
+- Keep the app usable in StackBlitz, Vite, React, and TypeScript.
+- Do not touch auth, Supabase, scoring logic, CSV import, athlete dashboard, PDF export, or report layouts unless the task explicitly asks for it.
+- Do not remove the coach workspace, athlete library, report builder, scoring guide, CSV import, saved reports, or PDF report flows.
 - When changing logic, explain what changed and why.
-- Keep the app usable in StackBlitz/Vite/React/TypeScript.
 
-## Current build priorities
-1. Stabilize save report and athlete library behavior.
-2. Stabilize the one-page PDF report behavior.
-3. Add localStorage persistence for coach accounts, athletes, and reports.
-4. Improve CSV import validation.
-5. Refactor into organized components only after the current flow works.
+## Current Working Rules
+
+- Follow the user's current task only.
+- Do not assume old priorities are active unless the user mentions them.
+- For marketing-site tasks, stay inside the marketing/homepage files unless explicitly told otherwise.
+- For app-product tasks, keep changes narrow and preserve the existing athlete/report/scoring flows.
+- If a task could touch protected areas, stop and ask for confirmation before editing.
