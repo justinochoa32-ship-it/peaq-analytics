@@ -2573,25 +2573,8 @@ function CoachResources({ onBack }: { onBack: () => void }) {
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
         </BrandedPageHeader>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Quick Find</p>
-            <p className="mt-2 text-2xl font-black tracking-tight">Onboarding and protocols in one place.</p>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Best Starting Point</p>
-            <p className="mt-2 text-lg font-black text-slate-950">Start Here, then Testing Day Checklist.</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">Use the protocol cards before the first testing session.</p>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Coach Note</p>
-            <p className="mt-2 text-lg font-black text-slate-950">Consistency beats novelty.</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">Cleaner setup gives cleaner reports and better retest decisions.</p>
-          </div>
-        </section>
-
         <section className="space-y-4">
-          <ResourceAccordion title="Start Here" summary="A quick orientation to what PEAQ does and the basic coach workflow." defaultOpen>
+          <ResourceAccordion title="Start Here" summary="A quick orientation to what PEAQ does and the basic coach workflow.">
             <div className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
               <div className="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-7 text-slate-700">
                 <p>PEAQ is built to help coaches turn simple performance testing into clear athlete profiles. Instead of only looking at raw numbers, PEAQ organizes testing results into key athletic qualities like acceleration, change of direction, jump output, jump efficiency, and strength capacity.</p>
@@ -4497,12 +4480,16 @@ function Workspace({
         <section className="rounded-[2rem] bg-[#231f20] p-6 text-white shadow-sm md:p-8">
           <div className="flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col gap-3">
                 <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
-                <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Coach: {getCoachDisplayName(coach)}</span>
-                <button onClick={onCoachProfile} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Account Profile</button>
-                <button onClick={onResources} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Coach Resources</button>
-                {syncStatus ? <span className="rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span> : null}
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Coach: {getCoachDisplayName(coach)}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={onCoachProfile} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Account Profile</button>
+                    <button onClick={onResources} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Coach Resources</button>
+                  </div>
+                </div>
+                {syncStatus ? <div><span className="inline-flex rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span></div> : null}
               </div>
               <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization || "PEAQ Analytics"}</h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">PEAQ Analytics workspace.</p>
