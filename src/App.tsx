@@ -18,7 +18,7 @@ type BucketKey = "athleticExpression" | "power" | "strength" | "efficiency";
 type ComparisonKey = "overall" | "rating" | MetricKey | BucketKey;
 type AthleteDataKey = "name" | "sex" | "date" | "dob" | "sport" | "position" | "height" | "bodyweight" | "sprint10" | "drill505" | "cmjHeight" | "mRsi" | "trapBarE1RM";
 type NullableNumber = number | null;
-type ViewName = "auth" | "workspace" | "coach-profile" | "guide" | "print" | "share-card" | "progress-print" | "progress-share-card" | "builder" | "csv" | "athlete" | "saved-report";
+type ViewName = "auth" | "workspace" | "coach-profile" | "resources" | "guide" | "print" | "share-card" | "progress-print" | "progress-share-card" | "builder" | "csv" | "athlete" | "saved-report";
 
 type AthleteData = Record<AthleteDataKey, string>;
 
@@ -2343,6 +2343,529 @@ function ScoringGuide({ onBack }: { onBack: () => void }) {
   );
 }
 
+function ResourceAccordion({ title, summary, children, defaultOpen = false }: { title: string; summary: string; children: ReactNode; defaultOpen?: boolean }) {
+  return (
+    <details open={defaultOpen} className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between md:p-6 [&::-webkit-details-marker]:hidden">
+        <span>
+          <span className="block text-lg font-black tracking-tight text-slate-950 md:text-xl">{title}</span>
+          <span className="mt-1 block text-sm font-semibold leading-6 text-slate-500">{summary}</span>
+        </span>
+        <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xl font-black leading-none text-slate-600">+</span>
+      </summary>
+      <div className="border-t border-slate-100 px-5 pb-5 md:px-6 md:pb-6">
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function ResourceList({ title, items, ordered = false }: { title: string; items: string[]; ordered?: boolean }) {
+  const listClassName = `mt-3 space-y-2 pl-5 text-sm font-semibold leading-6 text-slate-700 ${ordered ? "list-decimal" : "list-disc"} marker:text-[#1e94d2]`;
+  const listItems = items.map((item) => <li key={item}>{item}</li>);
+
+  return (
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</p>
+      {ordered ? <ol className={listClassName}>{listItems}</ol> : <ul className={listClassName}>{listItems}</ul>}
+    </div>
+  );
+}
+
+function CoachResources({ onBack }: { onBack: () => void }) {
+  const workflowSteps = [
+    "Test the athlete using the standard PEAQ protocols.",
+    "Enter data manually or import a CSV.",
+    "Generate the athlete report.",
+    "Review the profile rating, archetype, strengths, limiters, and test scores.",
+    "Use the report to guide training priorities and communicate with the athlete.",
+  ];
+
+  const testingDayBefore = [
+    "Confirm athlete name, sex, sport, and bodyweight.",
+    "Make sure all devices are charged and connected.",
+    "Confirm timing gates are aligned.",
+    "Confirm the testing surface is safe and consistent.",
+    "Have athletes complete a standardized warm-up.",
+    "Explain each test before starting.",
+    "Give athletes 1-2 practice reps when needed.",
+  ];
+
+  const testingOrder = [
+    "10-yard sprint",
+    "505",
+    "Hands-on-hips CMJ",
+    "Trap bar 1RM or load-velocity profile",
+  ];
+
+  const retestingPractices = [
+    "Retest under similar conditions.",
+    "Use the same equipment and setup.",
+    "Use the same testing order.",
+    "Avoid comparing in-season fatigue data to fresh offseason data without context.",
+    "Track trends over time instead of overreacting to one test.",
+  ];
+
+  const reportSteps = [
+    "Go to the athlete dashboard.",
+    "Select New Report.",
+    "Choose or create the athlete profile.",
+    "Enter the test date.",
+    "Input the athlete's test results.",
+    "Review the values for accuracy.",
+    "Click Generate Report.",
+    "Review the profile rating, archetype, strengths, limiters, and test scores.",
+    "Export, print, or save the report.",
+  ];
+
+  const csvSteps = [
+    "Go to the CSV Import area.",
+    "Download the PEAQ CSV template.",
+    "Fill in the required athlete information and test values.",
+    "Keep the column headers exactly the same.",
+    "Save the file as a .csv.",
+    "Upload the file into PEAQ.",
+    "Review the import preview.",
+    "Fix any errors or missing fields.",
+    "Confirm the import.",
+    "Generate reports for one athlete or multiple athletes.",
+  ];
+
+  const csvBestPractices = [
+    "Do not rename columns in the template.",
+    "Use numbers only in testing fields.",
+    "Keep units consistent.",
+    "Make sure each athlete has a name and test date.",
+    "Do not mix old testing protocols with new testing protocols in the same import.",
+  ];
+
+  const csvIssues = [
+    "Missing required columns.",
+    "Extra spaces in column headers.",
+    "Text entered into numeric fields.",
+    "Bodyweight missing.",
+    "Dates entered in inconsistent formats.",
+    "Trap bar 1RM entered without bodyweight.",
+  ];
+
+  const archetypeDescriptions = [
+    "Definitive Advanced Profile: Efficient and advanced across the board.",
+    "Near Advanced: Close to advanced, but one area is still holding the profile back.",
+    "Foundational Profile: Solid base with one or two clear priorities.",
+    "Power-Limited: Jump output is the main limiter.",
+    "Strength-Limited: Strength capacity is the main limiter.",
+    "Efficiency-Limited: Jump efficiency or COD efficiency is the main limiter.",
+    "Transfer-Limited: Strength and/or power exists, but it is not showing up well in sprint, jump, or COD outputs.",
+    "Broad Development Priority: Multiple qualities need development.",
+  ];
+
+  const limiterExamples = [
+    "Acceleration ability",
+    "Change of direction ability",
+    "Jump output",
+    "Jump efficiency",
+    "Strength capacity",
+  ];
+
+  const faqItems = [
+    {
+      question: "Do coaches have to use your exact protocols?",
+      answer: "For the cleanest reports, yes. PEAQ is built around standardized testing. Coaches can still use the app with their own methods in the future, but the most accurate comparisons come from using the same protocols consistently.",
+    },
+    {
+      question: "Can I compare my athletes to another coach's athletes?",
+      answer: "Only if the testing setup is the same. A 10-yard sprint with a 1-foot lead-in is not the same as a 10-yard sprint with a 3-point start, rolling start, or flying start. A 505 with a 10-yard lead-in is not the same as a stationary-start 505.\n\nFor best results, we recommend comparing your own testing protocols to your own testing protocols. Consistency matters more than chasing comparisons across different systems.",
+    },
+    {
+      question: "What if I do not have force plates?",
+      answer: "You can still use jump height if you have a valid jump mat or other reliable jump system, but force-plate-specific metrics like mRSI may not be available depending on your setup.",
+    },
+    {
+      question: "What if I do not test trap bar 1RM?",
+      answer: "You can use an estimated 1RM from a load-velocity profile. The key is that the number needs to be reliable and repeatable.",
+    },
+    {
+      question: "Should I always share the full report with athletes?",
+      answer: "Usually, yes, but simplify the explanation. Athletes do not need a sport science lecture. They need to know what they are good at, what is limiting them, and what the training plan is.",
+    },
+    {
+      question: "How often should I retest?",
+      answer: "For most settings, every 4-8 weeks works well. In-season, you may test less aggressively and focus more on monitoring. Offseason blocks can support more structured retesting.",
+    },
+    {
+      question: "What matters more: raw numbers or trends?",
+      answer: "Both matter, but trends are usually more useful. One test gives a snapshot. Multiple tests show the story.",
+    },
+    {
+      question: "What if an athlete has a bad testing day?",
+      answer: "Do not overreact. Look at context: sleep, soreness, schedule, injury, motivation, and previous training load. Retest if the data does not match what you see in training.",
+    },
+  ];
+
+  const troubleshootingItems = [
+    {
+      issue: "My athlete's report looks wrong.",
+      label: "Checks",
+      checks: [
+        "Was bodyweight entered correctly?",
+        "Were sprint and 505 times entered in seconds?",
+        "Were jump values entered in the correct unit?",
+        "Was trap bar 1RM entered correctly?",
+        "Was the correct sex selected?",
+        "Was the correct athlete selected before generating the report?",
+      ],
+    },
+    {
+      issue: "The CSV import failed.",
+      label: "Checks",
+      checks: [
+        "Did you use the official template?",
+        "Did you change any column names?",
+        "Are required fields missing?",
+        "Are numbers entered as text?",
+        "Are there extra spaces in the headers?",
+        "Is the file saved as .csv?",
+      ],
+    },
+    {
+      issue: "The report is missing a score.",
+      label: "Possible reasons",
+      checks: [
+        "A required metric is missing.",
+        "A value is outside the expected range.",
+        "The athlete profile is incomplete.",
+        "The test protocol does not match the current scoring model.",
+      ],
+    },
+    {
+      issue: "The athlete's score dropped.",
+      label: "Possible reasons",
+      checks: [
+        "Fatigue",
+        "Recent game/training load",
+        "Soreness",
+        "Injury irritation",
+        "Poor warm-up",
+        "Different testing surface",
+        "Different testing device",
+        "Different start or test setup",
+      ],
+    },
+  ];
+
+  const videoCards: Array<[string, string]> = [
+    ["PEAQ in 3 Minutes: What It Is and How It Works", "A quick orientation for new coaches."],
+    ["How to Run a New Athlete Report", "Walk through the report creation flow."],
+    ["How to Import a CSV", "Use the template and review imported rows."],
+    ["How to Read the Athlete Profile", "Understand ratings, archetypes, strengths, and limiters."],
+    ["How to Test the 10-Yard Sprint", "Set up and run the acceleration protocol."],
+    ["How to Test the 505", "Standardize the lead-in, gate, and turn line."],
+    ["How to Test the Hands-on-Hips CMJ", "Coach consistent jump technique."],
+    ["How to Enter Trap Bar 1RM or L/V Profile Data", "Use true or estimated strength values cleanly."],
+    ["How to Export or Print a Report", "Prepare reports for sharing."],
+    ["Common Mistakes to Avoid", "Spot the setup issues that create noisy data."],
+  ];
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <BrandedPageHeader eyebrow="Help Center" title="Coach Resources" copy="Standard protocols, app walkthroughs, FAQs, and troubleshooting for running clean PEAQ reports.">
+          <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
+        </BrandedPageHeader>
+
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Quick Find</p>
+            <p className="mt-2 text-2xl font-black tracking-tight">Onboarding and protocols in one place.</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Best Starting Point</p>
+            <p className="mt-2 text-lg font-black text-slate-950">Start Here, then Testing Day Checklist.</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">Use the protocol cards before the first testing session.</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Coach Note</p>
+            <p className="mt-2 text-lg font-black text-slate-950">Consistency beats novelty.</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">Cleaner setup gives cleaner reports and better retest decisions.</p>
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <ResourceAccordion title="Start Here" summary="A quick orientation to what PEAQ does and the basic coach workflow." defaultOpen>
+            <div className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+              <div className="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-7 text-slate-700">
+                <p>PEAQ is built to help coaches turn simple performance testing into clear athlete profiles. Instead of only looking at raw numbers, PEAQ organizes testing results into key athletic qualities like acceleration, change of direction, jump output, jump efficiency, and strength capacity.</p>
+                <p>The goal is simple: test consistently, generate clean reports, identify strengths and limiters, and use that information to guide smarter training decisions.</p>
+              </div>
+              <ResourceList title="Basic Workflow" items={workflowSteps} ordered />
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="Standard Testing Protocols" summary="Protocol cards for acceleration, change of direction, jump, and strength testing.">
+            <div className="mt-5 space-y-4">
+              <ResourceAccordion title="10-Yard Sprint" summary="10-yard sprint with a 1-foot lead-in to measure acceleration ability.">
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl bg-slate-950 p-4 text-white">
+                    <p className="text-xs font-black uppercase tracking-wide text-white/50">Protocol</p>
+                    <p className="mt-2 text-lg font-black">10-yard sprint with a 1-foot lead-in.</p>
+                    <p className="mt-4 text-xs font-black uppercase tracking-wide text-white/50">What it measures</p>
+                    <p className="mt-2 text-sm font-semibold text-white/75">Acceleration ability.</p>
+                  </div>
+                  <ResourceList title="Setup" items={[
+                    "Set timing gates at 0 yards and 10 yards.",
+                    "Athlete starts with their front foot exactly 1 foot behind the first timing gate/start line.",
+                    "Athlete begins from a still position.",
+                    "No rocking, rolling, or false starts.",
+                    "Sprint maximally through the 10-yard finish gate.",
+                  ]} />
+                  <ResourceList title="Recommended Trials" items={[
+                    "2-3 trials.",
+                    "Full recovery between reps, usually 60-120 seconds.",
+                    "Record the best valid time.",
+                  ]} />
+                  <ResourceList title="Best Practices" items={[
+                    "Use the same start stance every time.",
+                    "Make sure the athlete does not lean through the gate before starting.",
+                    "Make sure they sprint past the finish instead of decelerating early.",
+                    "For repeat testing, always use the same surface, shoes, and timing setup when possible.",
+                  ]} />
+                  <div className="lg:col-span-2">
+                    <ResourceList title="Common Mistakes" items={[
+                      "Athlete starts more or less than 1 foot behind the first gate, making the test less standardized.",
+                      "Athlete triggers the first gate with body sway before actually sprinting.",
+                      "Athlete slows down before the finish gate.",
+                    ]} />
+                  </div>
+                </div>
+              </ResourceAccordion>
+
+              <ResourceAccordion title="505 Change of Direction Test" summary="505 with a 10-yard lead-in to measure change of direction ability.">
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl bg-slate-950 p-4 text-white">
+                    <p className="text-xs font-black uppercase tracking-wide text-white/50">Protocol</p>
+                    <p className="mt-2 text-lg font-black">505 with a 10-yard lead-in.</p>
+                    <p className="mt-4 text-xs font-black uppercase tracking-wide text-white/50">What it measures</p>
+                    <p className="mt-2 text-sm font-semibold text-white/75">Change of direction ability.</p>
+                  </div>
+                  <ResourceList title="Setup" items={[
+                    "Athlete begins 10 yards behind the timing gate.",
+                    "Athlete sprints through the timing gate toward the change-of-direction line.",
+                    "The turn line is 5 yards beyond the timing gate.",
+                    "Athlete plants, turns 180 degrees, and sprints back through the timing gate.",
+                    "Time starts when the athlete first crosses the gate and stops when they return through the same gate.",
+                    "The athlete's hands cannot touch the ground during the test.",
+                    "The athlete must clearly reach the turn line and complete a true 180-degree change of direction.",
+                  ]} />
+                  <ResourceList title="Recording the Result" items={[
+                    "Coaches can label right and left sides on their own if they want to track asymmetries or side-to-side differences.",
+                    "For the standard PEAQ report, use the best valid 505 time of the two sides.",
+                  ]} />
+                  <ResourceList title="Recommended Trials" items={[
+                    "1-2 practice reps if needed.",
+                    "2-3 recorded trials.",
+                    "Record the best valid 505 time.",
+                  ]} />
+                  <ResourceList title="Best Practices" items={[
+                    "Make sure the athlete clearly reaches the turn line.",
+                    "Keep the approach distance the same every time.",
+                    "Make sure athletes sprint out of the turn, not just into it.",
+                    "Use COD deficit as context, not as the only judgment of change of direction ability.",
+                  ]} />
+                  <div className="lg:col-span-2">
+                    <ResourceList title="Common Mistakes" items={[
+                      "Athlete does not reach the turn line.",
+                      "Athlete rounds the turn instead of making a true 180-degree cut.",
+                      "The lead-in distance changes from test to test.",
+                      "Coach compares a 10-yard lead-in 505 to a 1-step or stationary-start 505.",
+                      "Athlete touches the ground with their hands during the turn.",
+                    ]} />
+                  </div>
+                </div>
+              </ResourceAccordion>
+
+              <ResourceAccordion title="Hands-on-Hips CMJ" summary="Hands-on-hips countermovement jump to measure jump output and jump efficiency.">
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl bg-slate-950 p-4 text-white">
+                    <p className="text-xs font-black uppercase tracking-wide text-white/50">Protocol</p>
+                    <p className="mt-2 text-lg font-black">Countermovement jump with hands on hips.</p>
+                    <p className="mt-4 text-xs font-black uppercase tracking-wide text-white/50">What it measures</p>
+                    <p className="mt-2 text-sm font-semibold text-white/75">Jump output and jump efficiency.</p>
+                  </div>
+                  <ResourceList title="Setup" items={[
+                    "Athlete stands tall on the force plates or jump mat.",
+                    "Hands stay on hips for the entire jump.",
+                    "Athlete performs a quick countermovement and jumps as high as possible.",
+                    "Athlete lands under control.",
+                    "No arm swing.",
+                    "No tucking the knees in the air.",
+                    "No stepping or excessive movement before the jump.",
+                  ]} />
+                  <ResourceList title="Recommended Trials" items={[
+                    "3-4 jumps.",
+                    "30-60 seconds rest between jumps.",
+                    "Record the best valid jump height.",
+                    "If using force plates, also record mRSI if available.",
+                  ]} />
+                  <ResourceList title="Best Practices" items={[
+                    "Standardize instructions: \"Hands on hips, jump high and fast, land still.\"",
+                    "Keep depth self-selected unless the coach is intentionally controlling jump strategy.",
+                    "Watch for inconsistent technique between jumps.",
+                    "If an athlete uses a very different strategy from rep to rep, consider retesting.",
+                  ]} />
+                  <div className="lg:col-span-2">
+                    <ResourceList title="Common Mistakes" items={[
+                      "Hands come off hips.",
+                      "Athlete tucks knees to create a false jump height.",
+                      "Athlete lands off the plates.",
+                      "Athlete dips excessively low on one rep and shallow on another.",
+                      "Athlete treats it like a slow strength movement instead of a max jump.",
+                    ]} />
+                  </div>
+                </div>
+              </ResourceAccordion>
+
+              <ResourceAccordion title="Trap Bar 1RM" summary="Trap bar 1RM or load-velocity profile to measure relative strength capacity.">
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl bg-slate-950 p-4 text-white">
+                    <p className="text-xs font-black uppercase tracking-wide text-white/50">Protocol</p>
+                    <p className="mt-2 text-lg font-black">Trap bar 1RM using either a true 1RM or a load-velocity profile.</p>
+                    <p className="mt-4 text-xs font-black uppercase tracking-wide text-white/50">What it measures</p>
+                    <p className="mt-2 text-sm font-semibold text-white/75">Relative strength capacity.</p>
+                  </div>
+                  <ResourceList title="Accepted Methods" items={[
+                    "True trap bar deadlift 1RM.",
+                    "Estimated 1RM from a load-velocity profile.",
+                  ]} ordered />
+                  <ResourceList title="Setup" items={[
+                    "Use a consistent trap bar style when possible.",
+                    "Record athlete bodyweight.",
+                    "Record the final 1RM or estimated 1RM.",
+                    "PEAQ uses relative strength, so the key output is trap bar 1RM divided by bodyweight.",
+                  ]} />
+                  <ResourceList title="Best Practices" items={[
+                    "Use the same trap bar setup over time.",
+                    "Be consistent with high handles vs. low handles.",
+                    "Use the same footwear or lifting conditions when possible.",
+                    "If using velocity, make sure the device is set up correctly.",
+                    "Do not chase ugly maxes just for the report. The goal is a valid performance number.",
+                  ]} />
+                  <div className="lg:col-span-2">
+                    <ResourceList title="Common Mistakes" items={[
+                      "Mixing high-handle and low-handle trap bar numbers.",
+                      "Using estimated 1RM without a consistent velocity profile.",
+                      "Forgetting to enter bodyweight.",
+                      "Comparing athletes without normalizing to bodyweight.",
+                      "Recording a technical breakdown lift as a true max.",
+                    ]} />
+                  </div>
+                </div>
+              </ResourceAccordion>
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="Testing Day Checklist" summary="A simple checklist for running a clean testing session.">
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <ResourceList title="Before Testing" items={testingDayBefore} />
+              <ResourceList title="Recommended Testing Order" items={testingOrder} ordered />
+              <ResourceList title="Retesting Best Practices" items={retestingPractices} />
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="How to Run a Report" summary="Step-by-step instructions for creating a new athlete report.">
+            <div className="mt-5">
+              <ResourceList title="Steps" items={reportSteps} ordered />
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="How to Import a CSV" summary="Use the PEAQ CSV template to upload one or many athletes at once.">
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <div className="lg:col-span-3">
+                <ResourceList title="Steps" items={csvSteps} ordered />
+              </div>
+              <ResourceList title="Best Practices" items={csvBestPractices} />
+              <div className="lg:col-span-2">
+                <ResourceList title="Common CSV Issues" items={csvIssues} />
+              </div>
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="How to Read the Report" summary="Understand the profile rating, archetype, strengths, limiters, and test scores.">
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Profile Rating</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">The profile rating gives a quick snapshot of the athlete's overall testing profile. It should not replace coaching judgment, but it helps organize the athlete's current physical profile.</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Archetype</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">The archetype describes the athlete's overall performance profile.</p>
+              </div>
+              <div className="lg:col-span-2">
+                <ResourceList title="Archetype Descriptions" items={archetypeDescriptions} />
+              </div>
+              <ResourceList title="Primary Limiter Examples" items={limiterExamples} />
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Current Strength</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">The current strength highlights what the athlete does best right now. This is useful for athlete communication because the report should not just tell athletes what they are bad at. It should also show them what they can build from.</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Primary Limiter</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">The primary limiter is the biggest area currently holding back the athlete's profile.</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Coach Summary</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">The coach summary turns the data into a short, usable interpretation. This is the part most coaches can use when talking to athletes, parents, sport coaches, or performance staff.</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Test Metrics</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">The raw test metrics show the actual performance outputs used to build the athlete's profile.</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Scoring Bars</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-700">The scoring bars show how each test contributes to the broader athletic profile.</p>
+              </div>
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="Coach FAQ" summary="Common questions coaches may have when using PEAQ.">
+            <div className="mt-5 grid gap-3 lg:grid-cols-2">
+              {faqItems.map((item) => (
+                <div key={item.question} className="rounded-2xl bg-slate-50 p-4">
+                  <p className="font-black text-slate-950">{item.question}</p>
+                  <div className="mt-3 space-y-3 text-sm font-semibold leading-6 text-slate-700">
+                    {item.answer.split("\n\n").map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="Troubleshooting" summary="Quick fixes for common report, CSV, and data issues.">
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              {troubleshootingItems.map((item) => (
+                <ResourceList key={item.issue} title={`${item.issue} ${item.label}`} items={item.checks} />
+              ))}
+            </div>
+          </ResourceAccordion>
+
+          <ResourceAccordion title="Video Library / Walkthroughs" summary="Placeholder area for future walkthrough videos.">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {videoCards.map(([title, description]) => (
+                <div key={title} className="flex min-h-[150px] flex-col justify-between rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                  <div>
+                    <p className="font-black leading-6 text-slate-950">{title}</p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">{description}</p>
+                  </div>
+                  <span className="mt-4 inline-flex w-fit rounded-full bg-white px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-600 shadow-sm">Coming Soon</span>
+                </div>
+              ))}
+            </div>
+          </ResourceAccordion>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function DashboardReport({
   data,
   profile,
@@ -3830,6 +4353,7 @@ function Workspace({
   onOpenAthlete,
   onRestoreAthlete,
   onBulkArchiveState,
+  onResources,
   onGuide,
   onCoachProfile,
   onPrintReport,
@@ -3842,6 +4366,7 @@ function Workspace({
   onOpenAthlete: (id: string) => void;
   onRestoreAthlete: (id: string) => void;
   onBulkArchiveState: (athleteIds: string[], archivedAt: string | null) => void;
+  onResources: () => void;
   onGuide: () => void;
   onCoachProfile: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
@@ -3976,6 +4501,7 @@ function Workspace({
                 <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
                 <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Coach: {getCoachDisplayName(coach)}</span>
                 <button onClick={onCoachProfile} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Account Profile</button>
+                <button onClick={onResources} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Coach Resources</button>
                 {syncStatus ? <span className="rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span> : null}
               </div>
               <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization || "PEAQ Analytics"}</h1>
@@ -4548,6 +5074,7 @@ export default function AthleteProfilingMVP() {
         onOpenAthlete={openAthlete}
         onRestoreAthlete={restoreAthlete}
         onBulkArchiveState={setAthletesArchiveState}
+        onResources={() => navigate("resources", { athleteId: null, reportId: null })}
         onGuide={() => navigate("guide", { athleteId: null, reportId: null })}
         onCoachProfile={() => navigate("coach-profile", { athleteId: null, reportId: null })}
         onPrintReport={openPrintReport}
@@ -4574,6 +5101,7 @@ export default function AthleteProfilingMVP() {
 
   if (!coach) return <AuthCard onCreateCoach={(newCoach) => { setCoach(newCoach); navigate("workspace", { athleteId: null, reportId: null }); }} cloudEnabled={supabaseConfig.isConfigured} authMessage={authMessage} onSignIn={handleCloudSignIn} onSignUp={handleCloudSignUp} onPasswordReset={handlePasswordReset} />;
   if (view === "coach-profile") return <CoachProfilePage coach={coach} onBack={goWorkspace} onSave={updateCoachProfile} />;
+  if (view === "resources") return <CoachResources onBack={goWorkspace} />;
   if (view === "guide") return <ScoringGuide onBack={goWorkspace} />;
   if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} onShareCard={() => openShareCard(printData, printProfile, { view: "print", selectedAthleteId, selectedReportId })} />;
   if (view === "share-card" && printData && printProfile) return <ShareCardExport data={printData} profile={printProfile} onBack={returnFromShareCard} />;
