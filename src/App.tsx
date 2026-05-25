@@ -826,6 +826,22 @@ function buildAthleteReportDraft(athlete: AthleteProfileRecord): AthleteData {
   };
 }
 
+function getReportDisplayData(athlete: AthleteProfileRecord, report: SavedReport): AthleteData {
+  return {
+    ...report.data,
+    name: getAthleteDisplayName(athlete),
+    dob: getAthleteDob(athlete),
+    sex: athlete.sex === "Female" ? "Female" : "Male",
+    sport: athlete.sport || "Basketball",
+    position: cleanText(athlete.position),
+  };
+}
+
+function getReportDisplayProfile(athlete: AthleteProfileRecord, report: SavedReport): Profile {
+  const sex: Sex = athlete.sex === "Female" ? "Female" : "Male";
+  return report.profile.sex === sex ? report.profile : { ...report.profile, sex };
+}
+
 function getAthleteIdentityLine(athlete: AthleteProfileRecord): string {
   const dob = getAthleteDob(athlete);
   const reportCount = athlete.reports?.length || 0;
@@ -3840,7 +3856,7 @@ function AthleteDetailsPanel({ athlete, onSave }: { athlete: AthleteProfileRecor
         <div>
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">Athlete Details</p>
           <h2 className="text-2xl font-black tracking-tight">Profile Metadata</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">These fields help identify and contact the athlete. Saved reports keep their original report data.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">These fields update the athlete across the workspace. Saved report test results and scores stay unchanged.</p>
         </div>
         {editing ? (
           <div className="flex flex-wrap gap-2">
@@ -4028,6 +4044,9 @@ function SavedReportView({
   onPrintReport: (data: AthleteData, profile: Profile) => void;
   onShareCard: (data: AthleteData, profile: Profile) => void;
 }) {
+  const displayData = getReportDisplayData(athlete, report);
+  const displayProfile = getReportDisplayProfile(athlete, report);
+
   return (
     <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -4035,12 +4054,12 @@ function SavedReportView({
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Athlete Profile</button>
         </BrandedPageHeader>
         <DashboardReport
-          data={report.data}
-          profile={report.profile}
+          data={displayData}
+          profile={displayProfile}
           onSave={null}
           onBack={onBack}
-          onPrintReport={() => onPrintReport(report.data, report.profile)}
-          onShareCard={() => onShareCard(report.data, report.profile)}
+          onPrintReport={() => onPrintReport(displayData, displayProfile)}
+          onShareCard={() => onShareCard(displayData, displayProfile)}
           auditNote={getCorrectionNote(report)}
           extraActions={<button onClick={onCorrect} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Correct Report</button>}
         />
@@ -4591,6 +4610,8 @@ function Workspace({
               <div className="divide-y divide-slate-100">
                 {filteredAthletes.map((athlete) => {
                   const latest = getLatestReport(athlete);
+                  const latestDisplayData = latest ? getReportDisplayData(athlete, latest) : null;
+                  const latestDisplayProfile = latest ? getReportDisplayProfile(athlete, latest) : null;
                   const canSelectAthlete = selectionMode && (showArchived ? isArchivedAthlete(athlete) : !isArchivedAthlete(athlete));
                   const isSelected = selectedAthleteIds.includes(athlete.id);
                   return (
@@ -4615,7 +4636,7 @@ function Workspace({
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                         <button onClick={() => onOpenAthlete(athlete.id)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800">Open Profile</button>
                         {isArchivedAthlete(athlete) ? <button onClick={() => onRestoreAthlete(athlete.id)} className="rounded-xl bg-amber-100 px-3 py-2 text-xs font-black text-amber-900 hover:bg-amber-200">Restore</button> : null}
-                        <button onClick={() => latest && onPrintReport(latest.data, latest.profile)} disabled={!latest} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Print Latest</button>
+                        <button onClick={() => latestDisplayData && latestDisplayProfile && onPrintReport(latestDisplayData, latestDisplayProfile)} disabled={!latest} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200 disabled:opacity-40">Print Latest</button>
                       </div>
                     </div>
                   );
@@ -5105,7 +5126,7 @@ export default function AthleteProfilingMVP() {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     const report = athlete?.reports.find((item) => item.id === selectedReportId);
     if (!athlete || !report) return renderWorkspace(coach);
-    return <SavedReportView athlete={athlete} report={report} onBack={() => openAthlete(athlete.id)} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(report.data); navigate("builder", { athleteId: athlete.id, reportId: report.id }); }} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "saved-report", selectedAthleteId: athlete.id, selectedReportId: report.id })} />;
+    return <SavedReportView athlete={athlete} report={report} onBack={() => openAthlete(athlete.id)} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(getReportDisplayData(athlete, report)); navigate("builder", { athleteId: athlete.id, reportId: report.id }); }} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "saved-report", selectedAthleteId: athlete.id, selectedReportId: report.id })} />;
   }
   return renderWorkspace(coach);
 }
