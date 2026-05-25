@@ -687,6 +687,10 @@ img {
   gap: 24px;
 }
 
+.workflow-accordion-list {
+  display: none;
+}
+
 .workflow-grid article {
   min-height: 250px;
   padding: 24px;
@@ -1674,6 +1678,68 @@ img {
   .workflow-grid,
   .feature-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-grid {
+    display: none;
+  }
+
+  .workflow-accordion-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .workflow-accordion-list details {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--white);
+    box-shadow: 0 12px 28px rgba(8, 14, 29, 0.06);
+  }
+
+  .workflow-accordion-list summary {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 58px;
+    padding: 8px 44px 8px 14px;
+    color: var(--ink);
+    cursor: pointer;
+    font-weight: 950;
+    list-style: none;
+  }
+
+  .workflow-accordion-list summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .workflow-accordion-list summary::after {
+    position: absolute;
+    right: 16px;
+    color: var(--muted);
+    content: "+";
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .workflow-accordion-list details[open] summary::after {
+    content: "-";
+  }
+
+  .workflow-accordion-list .step-number {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+    font-size: 12px;
+  }
+
+  .workflow-accordion-list p {
+    margin: 0;
+    padding: 0 16px 16px 60px;
+    color: var(--muted);
+    font-weight: 800;
   }
 
   .split-heading {
