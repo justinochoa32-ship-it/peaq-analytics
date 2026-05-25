@@ -105,8 +105,7 @@ img {
 }
 
 .nav-links a:hover,
-.footer-links a:hover,
-.coach-login-mobile:hover {
+.footer-links a:hover {
   color: var(--peaq-blue);
 }
 
@@ -116,6 +115,10 @@ img {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.header-actions {
+  flex-wrap: nowrap;
 }
 
 .button {
@@ -229,12 +232,6 @@ img {
 
 .hero-copy .cta-row {
   margin-top: 30px;
-}
-
-.coach-login-mobile {
-  display: none;
-  font-weight: 900;
-  color: var(--muted);
 }
 
 .product-preview {
@@ -1278,6 +1275,10 @@ img {
   gap: 14px;
 }
 
+.sports-mobile-summary {
+  display: none;
+}
+
 .sport-pills span {
   display: grid;
   place-items: center;
@@ -1296,6 +1297,10 @@ img {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 24px;
+}
+
+.feature-accordion-list {
+  display: none;
 }
 
 .feature-card-grid article {
@@ -1488,25 +1493,34 @@ img {
   }
 
   .site-header {
-    position: relative;
+    gap: 10px;
+    padding: 10px 0;
   }
 
-  .header-actions .button-secondary {
-    display: none;
+  .header-actions {
+    flex: 0 0 auto;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .header-actions .button {
+    min-height: 38px;
+    padding-inline: 12px;
+    font-size: 12px;
+    white-space: nowrap;
   }
 
   .header-actions .button-primary {
-    min-height: 42px;
-    padding-inline: 18px;
+    padding-inline: 14px;
   }
 
   .brand-wordmark {
-    width: 90px;
+    width: 86px;
   }
 
   .hero-section {
-    gap: 38px;
-    padding-top: 44px;
+    gap: 24px;
+    padding: 32px 0 48px;
   }
 
   .hero-copy h1,
@@ -1515,7 +1529,11 @@ img {
   .sports-section h2,
   .use-case-dark h2,
   .final-cta h2 {
-    font-size: 40px;
+    font-size: 38px;
+  }
+
+  .hero-copy h1 {
+    line-height: 1.02;
   }
 
   .hero-copy p,
@@ -1528,8 +1546,42 @@ img {
     font-size: 17px;
   }
 
-  .coach-login-mobile {
-    display: inline-flex;
+  .hero-copy p,
+  .section-heading p,
+  .feature-copy p {
+    margin-top: 16px;
+  }
+
+  .hero-copy .cta-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 22px;
+  }
+
+  .hero-copy .button {
+    width: 100%;
+  }
+
+  .workflow-section,
+  .sports-section {
+    padding: 48px 0;
+  }
+
+  .product-sections {
+    padding: 52px 0;
+  }
+
+  .features-section {
+    padding: 52px 0;
+  }
+
+  .section-heading {
+    margin-bottom: 24px;
+  }
+
+  .workflow-heading {
+    margin-bottom: 20px;
   }
 
   .hero-preview {
@@ -1632,19 +1684,79 @@ img {
   .feature-row,
   .feature-row-reverse,
   .sports-grid {
-    gap: 36px;
-    margin-bottom: 72px;
+    gap: 0;
+    margin-bottom: 48px;
+  }
+
+  .feature-row,
+  .feature-row-reverse {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .product-sections .feature-copy {
+    display: contents;
+  }
+
+  .product-sections .feature-copy .section-label,
+  .product-sections .feature-copy h2,
+  .product-sections .feature-copy p,
+  .product-sections .feature-copy .check-list {
+    width: 100%;
+  }
+
+  .product-sections .feature-copy .section-label {
+    order: 1;
+    margin-bottom: 12px;
+  }
+
+  .product-sections .feature-copy h2 {
+    order: 2;
+  }
+
+  .product-sections .feature-copy p {
+    order: 3;
+  }
+
+  .product-sections .feature-row > .visual-card {
+    order: 4;
+    width: 100%;
+    margin-top: 18px;
+  }
+
+  .product-sections .feature-copy .check-list {
+    order: 5;
   }
 
   .visual-card,
   .use-case-dark,
   .cta-panel,
   .domain-panel {
-    padding: 24px;
+    padding: 18px;
   }
 
   .visual-card h3 {
-    font-size: 26px;
+    margin-bottom: 16px;
+    font-size: 24px;
+  }
+
+  .check-list {
+    gap: 8px;
+    margin-top: 22px;
+  }
+
+  .check-list li {
+    min-height: 46px;
+    padding: 11px 12px 11px 40px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+
+  .check-list li::before {
+    left: 12px;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
   }
 
   .product-shot,
@@ -1676,6 +1788,92 @@ img {
     margin-top: 36px;
   }
 
+  .sports-grid > div > p:not(.sports-mobile-summary) {
+    display: none;
+  }
+
+  .sports-mobile-summary {
+    display: block;
+    max-width: none;
+    padding: 16px;
+    margin-top: 18px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: var(--white);
+    box-shadow: 0 12px 28px rgba(8, 14, 29, 0.06);
+  }
+
+  .sport-pills {
+    display: none;
+  }
+
+  .feature-card-grid {
+    display: none;
+  }
+
+  .feature-accordion-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .feature-accordion-list details {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--panel);
+    box-shadow: 0 12px 28px rgba(8, 14, 29, 0.06);
+  }
+
+  .feature-accordion-list summary {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 58px;
+    padding: 8px 44px 8px 14px;
+    color: var(--ink);
+    cursor: pointer;
+    font-weight: 950;
+    list-style: none;
+  }
+
+  .feature-accordion-list summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .feature-accordion-list summary::after {
+    position: absolute;
+    right: 16px;
+    color: var(--muted);
+    content: "+";
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .feature-accordion-list details[open] summary::after {
+    content: "-";
+  }
+
+  .feature-accordion-list .icon-mark {
+    flex: 0 0 auto;
+    width: 34px;
+    height: 34px;
+    border-radius: 11px;
+  }
+
+  .feature-accordion-list ul {
+    display: grid;
+    gap: 8px;
+    padding: 0 16px 16px 60px;
+    margin: 0;
+    color: var(--muted);
+    font-weight: 850;
+  }
+
+  .feature-accordion-list li::marker {
+    color: var(--green);
+  }
+
   .final-cta {
     border-radius: 20px;
   }
@@ -1687,8 +1885,32 @@ img {
 }
 
 @media (max-width: 440px) {
+  .section-shell,
+  .site-header,
+  .site-footer {
+    width: min(100% - 24px, 1220px);
+  }
+
+  .site-header {
+    gap: 8px;
+  }
+
+  .brand-wordmark {
+    width: 78px;
+  }
+
+  .header-actions {
+    gap: 5px;
+  }
+
+  .header-actions .button {
+    min-height: 36px;
+    padding-inline: 10px;
+    font-size: 11px;
+  }
+
   .hero-copy h1 {
-    font-size: 37px;
+    font-size: 34px;
   }
 
   .hero-report-preview .metric-panel h3 {
