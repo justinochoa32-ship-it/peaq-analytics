@@ -4497,12 +4497,16 @@ function Workspace({
         <section className="rounded-[2rem] bg-[#231f20] p-6 text-white shadow-sm md:p-8">
           <div className="flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-col gap-3">
                 <BrandMark variant="wordmark" tone="light" className="h-9 max-w-[168px]" />
-                <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Coach: {getCoachDisplayName(coach)}</span>
-                <button onClick={onCoachProfile} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Account Profile</button>
-                <button onClick={onResources} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Coach Resources</button>
-                {syncStatus ? <span className="rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span> : null}
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-sm font-bold text-white/70">Coach: {getCoachDisplayName(coach)}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={onCoachProfile} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Account Profile</button>
+                    <button onClick={onResources} className="rounded-full border border-white/20 px-3 py-1 text-sm font-bold text-white/80 hover:bg-white/10">Coach Resources</button>
+                  </div>
+                </div>
+                {syncStatus ? <div><span className="inline-flex rounded-full bg-[#1e94d2]/20 px-3 py-1 text-sm font-bold text-[#8ed5f5]">{syncStatus}</span></div> : null}
               </div>
               <h1 className="mt-5 text-3xl font-black tracking-tight md:text-5xl">{coach.organization || "PEAQ Analytics"}</h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-white/70">PEAQ Analytics workspace.</p>
