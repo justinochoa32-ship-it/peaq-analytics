@@ -2573,25 +2573,8 @@ function CoachResources({ onBack }: { onBack: () => void }) {
           <button onClick={onBack} className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-black text-white hover:bg-white/10">Back to Workspace</button>
         </BrandedPageHeader>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Quick Find</p>
-            <p className="mt-2 text-2xl font-black tracking-tight">Onboarding and protocols in one place.</p>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Best Starting Point</p>
-            <p className="mt-2 text-lg font-black text-slate-950">Start Here, then Testing Day Checklist.</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">Use the protocol cards before the first testing session.</p>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Coach Note</p>
-            <p className="mt-2 text-lg font-black text-slate-950">Consistency beats novelty.</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">Cleaner setup gives cleaner reports and better retest decisions.</p>
-          </div>
-        </section>
-
         <section className="space-y-4">
-          <ResourceAccordion title="Start Here" summary="A quick orientation to what PEAQ does and the basic coach workflow." defaultOpen>
+          <ResourceAccordion title="Start Here" summary="A quick orientation to what PEAQ does and the basic coach workflow.">
             <div className="mt-5 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
               <div className="space-y-3 rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-7 text-slate-700">
                 <p>PEAQ is built to help coaches turn simple performance testing into clear athlete profiles. Instead of only looking at raw numbers, PEAQ organizes testing results into key athletic qualities like acceleration, change of direction, jump output, jump efficiency, and strength capacity.</p>
