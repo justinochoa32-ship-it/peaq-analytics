@@ -491,30 +491,35 @@
           <span class="section-label">Request Access</span>
           <h3>Tell us about your coaching workflow.</h3>
           <p class="form-intro">Share a few details so early access setup can match your testing environment.</p>
-          <form class="access-form" data-access-form>
+          <form class="access-form" action="https://formsubmit.co/justinochoa32@gmail.com" method="POST" data-access-form>
+            <input type="hidden" name="_subject" value="New PEAQ early access request" />
+            <input type="hidden" name="_template" value="table" />
+            <input type="hidden" name="_captcha" value="false" />
+            <input type="hidden" name="_next" value="https://peaqanalytics.com/#request-access-form" />
+            <input class="form-honey" type="text" name="_honey" tabindex="-1" autocomplete="off" />
             <label>
               <span>Name</span>
-              <input name="name" type="text" autocomplete="name" required />
+              <input name="Name" type="text" autocomplete="name" required />
             </label>
             <label>
               <span>Email</span>
-              <input name="email" type="email" autocomplete="email" required />
+              <input name="Email" type="email" autocomplete="email" required />
             </label>
             <label>
               <span>Organization / Team / Facility</span>
-              <input name="organization" type="text" autocomplete="organization" required />
+              <input name="Organization / Team / Facility" type="text" autocomplete="organization" required />
             </label>
             <label>
               <span>Role</span>
-              <input name="role" type="text" autocomplete="organization-title" />
+              <input name="Role" type="text" autocomplete="organization-title" />
             </label>
             <label>
               <span>Sport(s)</span>
-              <input name="sports" type="text" placeholder="Basketball, football, soccer..." />
+              <input name="Sport(s)" type="text" placeholder="Basketball, football, soccer..." />
             </label>
             <label>
               <span>What best describes your setting?</span>
-              <select name="setting" required>
+              <select name="Setting" required>
                 <option value="">Select one</option>
                 <option>Private Facility</option>
                 <option>School</option>
@@ -526,7 +531,7 @@
             </label>
             <label>
               <span>What are you most interested in?</span>
-              <select name="interest" required>
+              <select name="Primary Interest" required>
                 <option value="">Select one</option>
                 <option>Athlete Profiling</option>
                 <option>CSV Import</option>
@@ -538,7 +543,7 @@
             </label>
             <label class="form-full">
               <span>Short message / current testing workflow</span>
-              <textarea name="message" rows="5" placeholder="Tell us what you test, what tools you use, and how you want to use PEAQ."></textarea>
+              <textarea name="Current Testing Workflow / Message" rows="5" placeholder="Tell us what you test, what tools you use, and how you want to use PEAQ."></textarea>
             </label>
             <button class="button button-primary form-full" type="submit">Request Early Access</button>
           </form>
@@ -566,39 +571,33 @@
       accessForm?.addEventListener("submit", (event) => {
         event.preventDefault();
 
+        const submitButton = accessForm.querySelector("button[type='submit']");
         const formData = new FormData(accessForm);
-        const details = {
-          name: formData.get("name")?.toString().trim() || "",
-          email: formData.get("email")?.toString().trim() || "",
-          organization: formData.get("organization")?.toString().trim() || "",
-          role: formData.get("role")?.toString().trim() || "",
-          sports: formData.get("sports")?.toString().trim() || "",
-          setting: formData.get("setting")?.toString().trim() || "",
-          interest: formData.get("interest")?.toString().trim() || "",
-          message: formData.get("message")?.toString().trim() || "",
-        };
 
-        const subject = encodeURIComponent(`PEAQ early access request from ${details.name || "a coach"}`);
-        const body = encodeURIComponent([
-          "PEAQ early access request",
-          "",
-          `Name: ${details.name}`,
-          `Email: ${details.email}`,
-          `Organization / Team / Facility: ${details.organization}`,
-          `Role: ${details.role || "Not provided"}`,
-          `Sport(s): ${details.sports || "Not provided"}`,
-          `Setting: ${details.setting}`,
-          `Most interested in: ${details.interest}`,
-          "",
-          "Current testing workflow / message:",
-          details.message || "Not provided",
-        ].join("\n"));
+        if (formStatus) formStatus.textContent = "Submitting your request...";
+        submitButton?.setAttribute("disabled", "true");
 
-        window.location.href = `mailto:justinochoa32@gmail.com?subject=${subject}&body=${body}`;
-
-        if (formStatus) {
-          formStatus.textContent = "Opening your email app with the request details. Send that email and Justin will follow up.";
-        }
+        fetch(accessForm.action, {
+          method: "POST",
+          body: formData,
+          headers: { Accept: "application/json" },
+        })
+          .then((response) => {
+            if (!response.ok) throw new Error("Form submission failed");
+            accessForm.reset();
+            if (formStatus) {
+              formStatus.textContent = "Thanks. Your early access request was sent, and Justin will follow up.";
+            }
+          })
+          .catch(() => {
+            if (formStatus) {
+              formStatus.textContent = "Submitting through the secure fallback page...";
+            }
+            accessForm.submit();
+          })
+          .finally(() => {
+            submitButton?.removeAttribute("disabled");
+          });
       });
     </script>
   </body>
