@@ -1664,6 +1664,10 @@ img {
   pointer-events: none;
 }
 
+.form-submit-frame {
+  display: none;
+}
+
 .access-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
