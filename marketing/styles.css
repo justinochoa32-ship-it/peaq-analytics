@@ -1549,6 +1549,13 @@ img {
   font-size: 13px;
 }
 
+.form-honey {
+  position: absolute;
+  left: -9999px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .access-form {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1603,6 +1610,12 @@ img {
 .access-form .button {
   width: 100%;
   min-height: 54px;
+}
+
+.access-form .button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
 }
 
 .site-footer {
