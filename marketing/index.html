@@ -533,11 +533,16 @@
           <span class="section-label">Request Access</span>
           <h3>Tell us about your coaching workflow.</h3>
           <p class="form-intro">Share a few details so early access setup can match your testing environment.</p>
-          <form class="access-form" action="https://formsubmit.co/justinochoa32@gmail.com" method="POST" data-access-form>
+          <form
+            class="access-form"
+            action="https://formsubmit.co/justinochoa32@gmail.com"
+            method="POST"
+            target="request-access-submit-frame"
+            data-access-form
+          >
             <input type="hidden" name="_subject" value="New PEAQ early access request" />
             <input type="hidden" name="_template" value="table" />
             <input type="hidden" name="_captcha" value="false" />
-            <input type="hidden" name="_next" value="https://peaqanalytics.com/#request-access-form" />
             <input class="form-honey" type="text" name="_honey" tabindex="-1" autocomplete="off" />
             <label>
               <span>Name</span>
@@ -589,7 +594,8 @@
             </label>
             <button class="button button-primary form-full" type="submit">Request Early Access</button>
           </form>
-          <p class="form-helper">After you submit interest, Justin will reach out with next steps for early access setup.</p>
+          <iframe class="form-submit-frame" name="request-access-submit-frame" title="Request access form submission"></iframe>
+          <p class="form-helper">After you submit the form, a member of our team will reach out with next steps for early access setup.</p>
           <p class="form-status" data-form-status aria-live="polite"></p>
         </div>
       </section>
@@ -628,14 +634,15 @@
             if (!response.ok) throw new Error("Form submission failed");
             accessForm.reset();
             if (formStatus) {
-              formStatus.textContent = "Thanks. Your early access request was sent, and Justin will follow up.";
+              formStatus.textContent = "Thanks. Your request has been received. A member of our team will reach out with next steps for early access setup.";
             }
           })
           .catch(() => {
             if (formStatus) {
-              formStatus.textContent = "Submitting through the secure fallback page...";
+              formStatus.textContent = "Thanks. Your request has been received. A member of our team will reach out with next steps for early access setup.";
             }
             accessForm.submit();
+            accessForm.reset();
           })
           .finally(() => {
             submitButton?.removeAttribute("disabled");
