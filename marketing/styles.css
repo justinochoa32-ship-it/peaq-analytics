@@ -234,6 +234,19 @@ img {
   margin-top: 30px;
 }
 
+.positioning-line {
+  display: inline-flex;
+  width: fit-content;
+  padding: 12px 18px;
+  border: 1px solid rgba(30, 148, 210, 0.24);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 950;
+  box-shadow: 0 12px 28px rgba(8, 14, 29, 0.06);
+}
+
 .product-preview {
   background: var(--white);
   border: 1px solid var(--line);
@@ -769,6 +782,114 @@ img {
   margin: 0;
   color: var(--muted);
   font-weight: 800;
+}
+
+.decision-section {
+  padding: 86px 0 0;
+}
+
+.decision-heading {
+  max-width: 880px;
+}
+
+.decision-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 24px;
+}
+
+.decision-card {
+  min-height: 100%;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+.decision-card-muted {
+  background: var(--white);
+}
+
+.decision-card-primary {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(135deg, var(--navy), #18263a);
+  color: var(--white);
+}
+
+.decision-label {
+  display: inline-flex;
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.decision-card-primary .decision-label {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--peaq-light);
+}
+
+.decision-card h3 {
+  margin: 28px 0 12px;
+  font-size: 32px;
+  line-height: 1.04;
+}
+
+.decision-card p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.decision-card-primary p {
+  color: #d6e1ec;
+}
+
+.decision-card ul {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 32px 0 0;
+  list-style: none;
+}
+
+.decision-card li {
+  position: relative;
+  padding-left: 28px;
+  color: #536176;
+  font-weight: 900;
+}
+
+.decision-card li::before {
+  position: absolute;
+  left: 0;
+  color: var(--muted);
+  content: "•";
+}
+
+.decision-card-primary li {
+  color: var(--white);
+}
+
+.decision-card-primary li::before {
+  color: var(--peaq-light);
+  content: "✓";
+}
+
+.decision-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 22px;
+  margin-top: 24px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--white);
+  font-weight: 950;
 }
 
 .product-sections {
@@ -1746,6 +1867,13 @@ img {
     padding: 48px 0 0;
   }
 
+  .positioning-line {
+    display: flex;
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
   .trust-card-grid {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -1759,6 +1887,40 @@ img {
   .trust-card-grid h3 {
     margin: 24px 0 10px;
     font-size: 22px;
+  }
+
+  .decision-section {
+    padding: 50px 0 0;
+  }
+
+  .decision-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .decision-card {
+    padding: 20px;
+    border-radius: 20px;
+  }
+
+  .decision-card h3 {
+    margin-top: 22px;
+    font-size: 26px;
+  }
+
+  .decision-card ul {
+    gap: 10px;
+    margin-top: 22px;
+  }
+
+  .decision-card li {
+    font-size: 14px;
+  }
+
+  .decision-cta {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
   }
 
   .product-sections {
@@ -1785,8 +1947,19 @@ img {
     padding: 8px;
   }
 
+  .hero-image-frame {
+    height: clamp(220px, 62vw, 300px);
+    overflow: hidden;
+  }
+
   .product-image-frame img {
     border-radius: 16px;
+  }
+
+  .hero-image-frame img {
+    width: 172%;
+    max-width: none;
+    transform: translateX(-18%);
   }
 
   .preview-hero {
@@ -2023,6 +2196,37 @@ img {
   .product-shot,
   .mobile-shot-shell {
     border-radius: 16px;
+  }
+
+  .intake-visual .product-shot,
+  .report-page-visual .product-shot,
+  .comparison-visual .product-shot,
+  .workspace-visual .product-shot {
+    height: clamp(215px, 58vw, 285px);
+  }
+
+  .intake-visual .product-shot img,
+  .report-page-visual .product-shot img,
+  .comparison-visual .product-shot img,
+  .workspace-visual .product-shot img {
+    width: 172%;
+    max-width: none;
+  }
+
+  .intake-visual .product-shot img {
+    transform: translateX(-7%);
+  }
+
+  .report-page-visual .product-shot img {
+    transform: translateX(-18%);
+  }
+
+  .comparison-visual .product-shot img {
+    transform: translateX(-29%);
+  }
+
+  .workspace-visual .product-shot img {
+    transform: translateX(-14%);
   }
 
   .mobile-shot-shell {
