@@ -672,6 +672,11 @@ img {
   color: var(--peaq-blue);
 }
 
+.hero-kicker {
+  max-width: 520px;
+  margin-bottom: 20px;
+}
+
 .workflow-heading {
   margin-bottom: 30px;
   max-width: 840px;
@@ -726,6 +731,41 @@ img {
 .workflow-grid p,
 .feature-card-grid li,
 .domain-row span {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.trust-section {
+  padding: 84px 0 0;
+}
+
+.trust-heading {
+  max-width: 760px;
+}
+
+.trust-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.trust-card-grid article {
+  min-height: 220px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--white);
+  box-shadow: var(--shadow);
+}
+
+.trust-card-grid h3 {
+  margin: 36px 0 12px;
+  font-size: 26px;
+  line-height: 1.08;
+}
+
+.trust-card-grid p {
   margin: 0;
   color: var(--muted);
   font-weight: 800;
@@ -790,6 +830,14 @@ img {
   font-size: 13px;
   content: "✓";
   transform: translateY(-50%);
+}
+
+.tool-note {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--white);
+  box-shadow: 0 12px 28px rgba(8, 14, 29, 0.06);
 }
 
 .visual-card {
@@ -1417,6 +1465,26 @@ img {
   margin-top: 38px;
 }
 
+.privacy-note {
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 15px;
+}
+
+.social-link {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 26px;
+  color: var(--peaq-light);
+  font-weight: 950;
+}
+
+.social-link:hover {
+  color: var(--white);
+}
+
 .domain-panel {
   padding: 46px 40px;
   color: var(--white);
@@ -1450,6 +1518,93 @@ img {
   color: #a4b0c0;
 }
 
+.access-form-card {
+  scroll-margin-top: 92px;
+  padding: 46px 40px;
+  background: var(--white);
+  color: var(--ink);
+}
+
+.access-form-card h3 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.05;
+}
+
+.form-intro,
+.form-helper,
+.form-status {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.form-helper {
+  font-size: 14px;
+}
+
+.form-status {
+  min-height: 22px;
+  color: #1874a8;
+  font-size: 13px;
+}
+
+.access-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.access-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.access-form label span {
+  color: #46546a;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.access-form input,
+.access-form select,
+.access-form textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.access-form textarea {
+  min-height: 128px;
+  resize: vertical;
+}
+
+.access-form input:focus,
+.access-form select:focus,
+.access-form textarea:focus {
+  outline: 3px solid rgba(30, 148, 210, 0.18);
+  border-color: var(--peaq-blue);
+  background: var(--white);
+}
+
+.form-full {
+  grid-column: 1 / -1;
+}
+
+.access-form .button {
+  width: 100%;
+  min-height: 54px;
+}
+
 .site-footer {
   display: flex;
   align-items: center;
@@ -1462,6 +1617,7 @@ img {
 
 .footer-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 28px;
 }
 
@@ -1480,6 +1636,7 @@ img {
   }
 
   .workflow-grid,
+  .trust-card-grid,
   .feature-card-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1570,6 +1727,25 @@ img {
   .workflow-section,
   .sports-section {
     padding: 48px 0;
+  }
+
+  .trust-section {
+    padding: 48px 0 0;
+  }
+
+  .trust-card-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .trust-card-grid article {
+    min-height: 0;
+    padding: 18px;
+  }
+
+  .trust-card-grid h3 {
+    margin: 24px 0 10px;
+    font-size: 22px;
   }
 
   .product-sections {
@@ -1784,6 +1960,11 @@ img {
     order: 3;
   }
 
+  .tool-note {
+    padding: 14px;
+    font-size: 15px;
+  }
+
   .product-sections .feature-row > .visual-card {
     order: 4;
     width: 100%;
@@ -1797,7 +1978,8 @@ img {
   .visual-card,
   .use-case-dark,
   .cta-panel,
-  .domain-panel {
+  .domain-panel,
+  .access-form-card {
     padding: 18px;
   }
 
@@ -1942,6 +2124,19 @@ img {
 
   .final-cta {
     border-radius: 20px;
+  }
+
+  .access-form-card h3 {
+    font-size: 26px;
+  }
+
+  .access-form {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .privacy-note {
+    font-size: 14px;
   }
 
   .site-footer {
