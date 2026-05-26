@@ -1867,11 +1867,16 @@ img {
     padding: 48px 0 0;
   }
 
-  .positioning-line {
-    display: flex;
-    width: 100%;
+  .hero-copy .positioning-line {
+    display: inline-flex;
+    width: auto;
+    max-width: 100%;
     justify-content: center;
+    padding: 10px 12px;
+    font-size: clamp(11.5px, 3.5vw, 13px);
+    line-height: 1.1;
     text-align: center;
+    white-space: nowrap;
   }
 
   .trust-card-grid {
@@ -1947,19 +1952,16 @@ img {
     padding: 8px;
   }
 
-  .hero-image-frame {
-    height: clamp(220px, 62vw, 300px);
-    overflow: hidden;
-  }
-
   .product-image-frame img {
     border-radius: 16px;
   }
 
   .hero-image-frame img {
-    width: 172%;
-    max-width: none;
-    transform: translateX(-18%);
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    transform: none;
   }
 
   .preview-hero {
@@ -2202,31 +2204,18 @@ img {
   .report-page-visual .product-shot,
   .comparison-visual .product-shot,
   .workspace-visual .product-shot {
-    height: clamp(215px, 58vw, 285px);
+    height: auto;
   }
 
   .intake-visual .product-shot img,
   .report-page-visual .product-shot img,
   .comparison-visual .product-shot img,
   .workspace-visual .product-shot img {
-    width: 172%;
-    max-width: none;
-  }
-
-  .intake-visual .product-shot img {
-    transform: translateX(-7%);
-  }
-
-  .report-page-visual .product-shot img {
-    transform: translateX(-18%);
-  }
-
-  .comparison-visual .product-shot img {
-    transform: translateX(-29%);
-  }
-
-  .workspace-visual .product-shot img {
-    transform: translateX(-14%);
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    transform: none;
   }
 
   .mobile-shot-shell {
