@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import {
   refreshSupabaseSession,
   sendPasswordReset,
@@ -18,7 +18,7 @@ type BucketKey = "athleticExpression" | "power" | "strength" | "efficiency";
 type ComparisonKey = "overall" | "rating" | MetricKey | BucketKey;
 type AthleteDataKey = "name" | "sex" | "date" | "dob" | "sport" | "position" | "height" | "bodyweight" | "sprint10" | "drill505" | "cmjHeight" | "mRsi" | "trapBarE1RM";
 type NullableNumber = number | null;
-type ViewName = "auth" | "workspace" | "coach-profile" | "resources" | "guide" | "print" | "share-card" | "progress-print" | "progress-share-card" | "builder" | "csv" | "athlete" | "saved-report";
+type ViewName = "auth" | "workspace" | "coach-profile" | "resources" | "guide" | "print" | "share-card" | "progress-print" | "progress-share-card" | "shape-print" | "shape-share-card" | "builder" | "csv" | "athlete" | "saved-report";
 
 type AthleteData = Record<AthleteDataKey, string>;
 
@@ -243,6 +243,24 @@ interface ProgressSummaryRow {
   to: string;
 }
 
+interface OverlayCategoryComparisonDatum {
+  key: BucketKey;
+  label: string;
+  valueA: NullableNumber;
+  valueB: NullableNumber;
+  change: NullableNumber;
+}
+
+interface OverlayMetricComparisonDatum extends ComparisonMetric {
+  key: MetricKey;
+  valueA: NullableNumber;
+  valueB: NullableNumber;
+  change: NullableNumber;
+  changeLabel: string;
+  directionLabel: string;
+  tone: string;
+}
+
 interface CsvRow extends Partial<Record<AthleteDataKey, string>> {
   id: string;
   [key: string]: string | undefined;
@@ -417,6 +435,16 @@ const comparisonMetrics: ComparisonMetric[] = [
 
 const progressMetricKeys: ComparisonKey[] = ["sprint10", "drill505", "cmjHeight", "mRsi", "relativeStrength"];
 const progressBucketKeys: ComparisonKey[] = ["athleticExpression", "power", "strength", "efficiency"];
+const overlayCategoryKeys: BucketKey[] = ["athleticExpression", "power", "strength", "efficiency"];
+const overlayMetricKeys: MetricKey[] = ["sprint10", "drill505", "codDeficit", "cmjHeight", "mRsi", "relativeStrength"];
+const overlayMetricDefinitions: Record<MetricKey, ComparisonMetric> = {
+  sprint10: { key: "sprint10", label: "10-Yard Sprint", unit: "sec", direction: "lower", decimals: 2 },
+  drill505: { key: "drill505", label: "505 Drill", unit: "sec", direction: "lower", decimals: 2 },
+  codDeficit: { key: "codDeficit", label: "COD Deficit", unit: "sec", direction: "lower", decimals: 2 },
+  cmjHeight: { key: "cmjHeight", label: "CMJ Height", unit: "in", direction: "higher", decimals: 1 },
+  mRsi: { key: "mRsi", label: "mRSI", unit: "", direction: "higher", decimals: 2 },
+  relativeStrength: { key: "relativeStrength", label: "Relative Strength", unit: "xBW", direction: "higher", decimals: 2 },
+};
 
 const correctionAuditFields: CorrectionAuditField[] = [
   { key: "name", label: "Athlete Name", getValue: (report) => report.data?.name },
@@ -1399,6 +1427,401 @@ function BucketCard({ bucket }: { bucket: BucketItem }) {
   );
 }
 
+function getRadarPoint(index: number, count: number, score: NullableNumber | undefined, radius: number, centerX = 180, centerY = centerX): { x: number; y: number } {
+  const value = isFiniteNumber(score) ? clamp(score, 0, 100) : 0;
+  const angle = -Math.PI / 2 + (index * 2 * Math.PI) / count;
+  const distance = (value / 100) * radius;
+  return {
+    x: centerX + Math.cos(angle) * distance,
+    y: centerY + Math.sin(angle) * distance,
+  };
+}
+
+function getRadarPolygonPoints(categories: OverlayCategoryComparisonDatum[], valueKey: "valueA" | "valueB", radius: number, centerX = 180, centerY = centerX): string {
+  return categories
+    .map((category, index) => {
+      const point = getRadarPoint(index, categories.length, category[valueKey], radius, centerX, centerY);
+      return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+    })
+    .join(" ");
+}
+
+function getLabelAnchor(x: number, center = 180): "start" | "middle" | "end" {
+  if (Math.abs(x - center) < 18) return "middle";
+  return x > center ? "start" : "end";
+}
+
+const shapePreviousHatchImage = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cline x1='-2' y1='14' x2='14' y2='-2' stroke='%231e94d2' stroke-width='2' stroke-opacity='0.42' stroke-linecap='round'/%3E%3C/svg%3E\")";
+
+function shapePreviousHatchStyle(width: string): CSSProperties {
+  return {
+    width,
+    backgroundColor: "rgba(30, 148, 210, 0.18)",
+    backgroundImage: shapePreviousHatchImage,
+    backgroundRepeat: "repeat",
+    backgroundSize: "12px 12px",
+    WebkitPrintColorAdjust: "exact",
+    printColorAdjust: "exact",
+  };
+}
+
+function shapeSolidSegmentStyle(style: CSSProperties): CSSProperties {
+  return {
+    ...style,
+    backgroundColor: "#1e94d2",
+    WebkitPrintColorAdjust: "exact",
+    printColorAdjust: "exact",
+  };
+}
+
+function getShapeBarMarkerPercent(value: NullableNumber): number | null {
+  if (!isFiniteNumber(value)) return null;
+  return clamp(value, 1.2, 98.8);
+}
+
+function ShapePreviousHatchSegment({ width }: { width: string; compact?: boolean }) {
+  return <div className="absolute inset-y-0 left-0 overflow-hidden rounded-full" style={shapePreviousHatchStyle(width)} />;
+}
+
+function OverlayProfileWheel({ categories, reportA, reportB, compact = false }: { categories: OverlayCategoryComparisonDatum[]; reportA: SavedReport; reportB: SavedReport; compact?: boolean }) {
+  if (categories.length < 3) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-5 text-sm font-bold text-slate-500">
+        Add at least three category scores to render the comparison wheel.
+      </div>
+    );
+  }
+
+  const radius = compact ? 108 : 114;
+  const labelRadius = compact ? 132 : 150;
+  const rings = [25, 50, 75, 100];
+  const baselinePoints = getRadarPolygonPoints(categories, "valueA", radius);
+  const currentPoints = getRadarPolygonPoints(categories, "valueB", radius);
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Profile Shape Comparison</p>
+          <h3 className={compact ? "text-lg font-black tracking-tight text-slate-950" : "text-2xl font-black tracking-tight text-slate-950"}>Profile Shape</h3>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-black">
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-slate-600"><i className="h-2 w-2 rounded-full border border-slate-500 bg-white" /> Previous Report: {formatDate(reportA.date)}</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-3 py-1 text-[#167bb0]"><i className="h-2 w-2 rounded-full bg-[#1e94d2]" /> Current Report: {formatDate(reportB.date)}</span>
+        </div>
+      </div>
+
+      <div className="mx-auto mt-3 flex w-full max-w-[500px] flex-1 items-center justify-center">
+        <svg viewBox="0 0 360 360" role="img" aria-label="Profile shape comparison radar" className="h-auto w-full overflow-visible">
+          <g>
+            {rings.map((ring) => (
+              <polygon
+                key={ring}
+                points={categories.map((_, index) => {
+                  const point = getRadarPoint(index, categories.length, ring, radius);
+                  return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+                }).join(" ")}
+                fill="none"
+                stroke={ring === 100 ? "#cbd5e1" : "#e2e8f0"}
+                strokeWidth={ring === 100 ? 1.6 : 1}
+              />
+            ))}
+            {rings.map((ring) => {
+              const point = getRadarPoint(0, categories.length, ring, radius);
+              return (
+                <text key={`ring-${ring}`} x={184} y={point.y + 4} fontSize="9" fontWeight="800" fill="#94a3b8">
+                  {ring}
+                </text>
+              );
+            })}
+            {categories.map((category, index) => {
+              const axisPoint = getRadarPoint(index, categories.length, 100, radius);
+              const labelPoint = getRadarPoint(index, categories.length, 100, labelRadius);
+              const lines = splitSvgText(category.label, compact ? 12 : 16, 2);
+              return (
+                <g key={category.key}>
+                  <line x1={180} y1={180} x2={axisPoint.x} y2={axisPoint.y} stroke="#e2e8f0" strokeWidth="1" />
+                  <text x={labelPoint.x} y={labelPoint.y - (lines.length - 1) * 5} textAnchor={getLabelAnchor(labelPoint.x)} fontSize={compact ? "9" : "10"} fontWeight="900" fill="#475569">
+                    {lines.map((line, lineIndex) => (
+                      <tspan key={line} x={labelPoint.x} dy={lineIndex === 0 ? 0 : 12}>
+                        {line}
+                      </tspan>
+                    ))}
+                  </text>
+                </g>
+              );
+            })}
+            <polygon points={baselinePoints} fill="#64748b" fillOpacity="0.04" stroke="#64748b" strokeWidth="1.8" strokeDasharray="5 5" strokeLinejoin="round" />
+            <polygon points={currentPoints} fill="#1e94d2" fillOpacity="0.12" stroke="#1e94d2" strokeWidth="3" strokeLinejoin="round" />
+            {categories.map((category, index) => {
+              const baselinePoint = getRadarPoint(index, categories.length, category.valueA, radius);
+              const currentPoint = getRadarPoint(index, categories.length, category.valueB, radius);
+              return (
+                <g key={`${category.key}-points`}>
+                  <circle cx={baselinePoint.x} cy={baselinePoint.y} r="3.5" fill="#ffffff" stroke="#64748b" strokeWidth="1.8" />
+                  <circle cx={currentPoint.x} cy={currentPoint.y} r="4.5" fill="#1e94d2" stroke="#ffffff" strokeWidth="1.5" />
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      </div>
+
+    </div>
+  );
+}
+
+function CategoryScoreComparisonBar({ category, compact = false, variant = "default" }: { category: OverlayCategoryComparisonDatum; compact?: boolean; variant?: "default" | "compact" | "pdf" | "story" }) {
+  const previousValue = isFiniteNumber(category.valueA) ? clamp(category.valueA, 0, 100) : null;
+  const currentValue = isFiniteNumber(category.valueB) ? clamp(category.valueB, 0, 100) : null;
+  const previousMarkerValue = getShapeBarMarkerPercent(previousValue);
+  const previousLeft = previousMarkerValue !== null ? `${previousMarkerValue}%` : null;
+  const currentWidth = currentValue !== null ? `${currentValue}%` : "0%";
+  const previousWidth = previousValue !== null ? `${previousValue}%` : "0%";
+  const improved = previousValue !== null && currentValue !== null && currentValue > previousValue;
+  const declined = previousValue !== null && currentValue !== null && currentValue < previousValue;
+  const currentOnly = previousValue === null && currentValue !== null;
+  const changeLeft = previousValue !== null && currentValue !== null ? `${Math.min(previousValue, currentValue)}%` : "0%";
+  const changeWidth = previousValue !== null && currentValue !== null ? `${Math.abs(currentValue - previousValue)}%` : "0%";
+  const markerAlignClass = previousMarkerValue !== null && previousMarkerValue >= 92 ? "-translate-x-full" : previousMarkerValue !== null && previousMarkerValue <= 8 ? "translate-x-0" : "-translate-x-1/2";
+  const changeTone = getCategoryChangeTone(category.change);
+  const dense = compact || variant === "compact" || variant === "pdf" || variant === "story";
+  const isPdf = variant === "pdf";
+  const cardClass = isPdf ? "shape-report-card relative h-[0.76in] overflow-hidden rounded-xl border border-slate-200 bg-white px-2.5 py-1.5" : `relative rounded-2xl border border-slate-200 bg-white ${dense ? "min-h-[124px] p-3" : "min-h-[148px] p-4"}`;
+  const labelClass = isPdf ? "truncate text-[8px] font-black uppercase tracking-[0.12em] text-slate-500" : "text-xs font-black uppercase tracking-wide text-slate-500";
+  const scoreLineClass = isPdf ? "mt-0.5 text-[12px] font-black leading-tight text-slate-950" : "mt-1 text-sm font-black text-slate-950";
+  const changeRowClass = isPdf ? "mt-0.5 text-[8px] font-bold text-slate-500" : "mt-1 text-xs font-bold text-slate-500";
+  const currentClass = isPdf ? "text-lg font-black leading-none text-slate-950" : `${dense ? "text-xl" : "text-2xl"} font-black leading-none text-slate-950`;
+  const chipClass = isPdf ? `rounded-full px-2 py-0.5 text-[8px] font-black ${changeTone}` : `rounded-full px-2 py-0.5 text-[10px] font-black ${changeTone}`;
+  const trackClass = isPdf ? "absolute bottom-2 left-2.5 right-2.5 h-2 rounded-full bg-slate-100" : "absolute bottom-6 left-4 right-4 h-3 rounded-full bg-slate-100";
+  const markerClass = isPdf ? "absolute top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full bg-[#0f4f78] ring-1 ring-white" : "absolute top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-[#0f4f78] shadow-sm ring-2 ring-white";
+  const markerLabelClass = isPdf ? `absolute -top-4 whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-[7px] font-black text-slate-500 ${markerAlignClass}` : `absolute -top-7 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 ${markerAlignClass}`;
+  const markerOffset = isPdf ? "1px" : "2px";
+
+  return (
+    <div className={cardClass}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={labelClass}>{category.label}</p>
+          <p className={scoreLineClass}>{formatScoreValue(category.valueA)} <span className="text-slate-400">→</span> {formatScoreValue(category.valueB)}</p>
+          <p className={changeRowClass}>Change A → B: <span className={chipClass}>{formatCategoryChange(category.change)}</span></p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={currentClass}>{formatScoreValue(category.valueB)}</p>
+          <p className={isPdf ? "mt-0.5 text-[7px] font-black uppercase tracking-wide text-slate-400" : "mt-1 text-[10px] font-black uppercase tracking-wide text-slate-400"}>Current</p>
+        </div>
+      </div>
+      <div className={trackClass}>
+        {previousValue !== null ? <ShapePreviousHatchSegment width={previousWidth} compact={dense} /> : null}
+        {currentOnly ? <div className="absolute inset-y-0 left-0 rounded-full" style={shapeSolidSegmentStyle({ width: currentWidth })} /> : null}
+        {improved ? <div className="absolute inset-y-0 rounded-r-full" style={shapeSolidSegmentStyle({ left: changeLeft, width: changeWidth })} /> : null}
+        {declined ? (
+          <>
+            <div className="absolute inset-y-0 left-0 rounded-full" style={shapeSolidSegmentStyle({ width: currentWidth })} />
+            <div className="absolute inset-y-0 rounded-full bg-orange-400/70" style={{ left: changeLeft, width: changeWidth }} />
+          </>
+        ) : null}
+        {previousLeft ? (
+          <>
+            <span
+              className={markerLabelClass}
+              style={{ left: previousLeft }}
+            >
+              Previous: {formatScoreValue(category.valueA)}
+            </span>
+            <span
+              className={markerClass}
+              style={{ left: `calc(${previousLeft} - ${markerOffset})` }}
+              aria-label={`Previous ${formatScoreValue(category.valueA)}`}
+            />
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MetricComparisonRow({ item, compact = false }: { item: OverlayMetricComparisonDatum; compact?: boolean }) {
+  return (
+    <div className={`grid min-w-[720px] grid-cols-[minmax(260px,1fr)_140px_140px_180px] gap-3 border-b border-slate-100 bg-white px-4 ${compact ? "py-2 text-xs" : "py-3 text-sm"} last:border-b-0`}>
+      <div>
+        <p className="font-black text-slate-950">{item.label}</p>
+        <p className="text-xs font-semibold text-slate-500">{item.directionLabel}</p>
+      </div>
+      <div className="text-right">
+        <p className="whitespace-nowrap font-black tabular-nums text-slate-700">{formatOverlayMetricValue(item.valueA, item)}</p>
+      </div>
+      <div className="text-right">
+        <p className="whitespace-nowrap font-black tabular-nums text-slate-700">{formatOverlayMetricValue(item.valueB, item)}</p>
+      </div>
+      <div className="text-right">
+        <span className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-black ${item.tone}`}>{item.changeLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function MetricComparisonTable({ metrics, compact = false }: { metrics: OverlayMetricComparisonDatum[]; compact?: boolean }) {
+  return (
+    <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+      <div className="grid min-w-[720px] grid-cols-[minmax(260px,1fr)_140px_140px_180px] gap-3 bg-slate-950 px-4 py-3 text-[10px] font-black uppercase tracking-wide text-white/60">
+        <div>Metric</div>
+        <div className="text-right">Report A</div>
+        <div className="text-right">Report B</div>
+        <div className="text-right">Change A → B</div>
+      </div>
+      {metrics.map((item) => <MetricComparisonRow key={item.key} item={item} compact={compact} />)}
+    </div>
+  );
+}
+
+function ProfileShapeComparison({ athlete, reportA, reportB, compact = false }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; compact?: boolean }) {
+  const categories = getOverlayCategoryComparisonData(reportA, reportB);
+  const metrics = getOverlayMetricComparisonData(reportA, reportB);
+  const overallChange = calculateOverlayChange(reportA.overall, reportB.overall);
+  const takeaway = getProfileOverlayTakeaway(athlete, reportA, reportB);
+
+  return (
+    <div className={compact ? "space-y-3" : "mt-6 space-y-5"}>
+      <div className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
+        <OverlayProfileWheel categories={categories} reportA={reportA} reportB={reportB} compact={compact} />
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Overall Score</p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <p className="text-3xl font-black tracking-tight text-slate-950">{formatScoreValue(reportA.overall)} <span className="text-slate-400">→</span> {formatScoreValue(reportB.overall)}</p>
+              <span className={`rounded-full px-3 py-1 text-xs font-black ${getCategoryChangeTone(overallChange)}`}>Change A → B: {formatCategoryChange(overallChange)}</span>
+            </div>
+            <p className="mt-2 text-sm font-semibold text-slate-500">Previous {formatDate(reportA.date)} · Current {formatDate(reportB.date)}</p>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Category Score Comparison</p>
+            <h3 className="text-2xl font-black tracking-tight text-slate-950">Current Score vs Previous Report</h3>
+            <div className="mt-4 grid gap-3">
+              {categories.map((category) => <CategoryScoreComparisonBar key={category.key} category={category} />)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+        <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Raw Test Metric Comparison</p>
+            <h3 className="whitespace-nowrap text-2xl font-black tracking-tight text-slate-950">Tested Metric Comparison</h3>
+          </div>
+        </div>
+        <MetricComparisonTable metrics={metrics} compact={compact} />
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Coach Takeaway</p>
+        <p className="mt-2 max-w-4xl text-base leading-7 text-slate-700">{takeaway}</p>
+      </section>
+    </div>
+  );
+}
+
+function ShapePdfWheelCard({ categories, reportA, reportB }: { categories: OverlayCategoryComparisonDatum[]; reportA: SavedReport; reportB: SavedReport }) {
+  if (categories.length < 3) {
+    return (
+      <section className="shape-report-card flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white p-3 text-xs font-bold text-slate-500">
+        Add at least three category scores to render the comparison wheel.
+      </section>
+    );
+  }
+
+  const radius = 108;
+  const labelRadius = 138;
+  const rings = [25, 50, 75, 100];
+  const baselinePoints = getRadarPolygonPoints(categories, "valueA", radius);
+  const currentPoints = getRadarPolygonPoints(categories, "valueB", radius);
+
+  return (
+    <section className="shape-report-card h-full rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[8px] font-black uppercase tracking-[0.16em] text-slate-500">Profile Shape</p>
+          <h2 className="text-base font-black leading-tight tracking-tight text-slate-950">Profile Shape Comparison</h2>
+        </div>
+        <div className="space-y-1 text-[8px] font-black">
+          <p className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">Previous: {formatDate(reportA.date)}</p>
+          <p className="whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-[#167bb0]">Current: {formatDate(reportB.date)}</p>
+        </div>
+      </div>
+
+      <svg viewBox="0 0 360 360" role="img" aria-label="Profile shape comparison radar" className="mx-auto mt-1 h-[2.85in] max-h-[2.85in] w-full max-w-[3.28in] overflow-visible">
+        {rings.map((ring) => (
+          <polygon
+            key={ring}
+            points={categories.map((_, index) => {
+              const point = getRadarPoint(index, categories.length, ring, radius);
+              return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+            }).join(" ")}
+            fill="none"
+            stroke={ring === 100 ? "#cbd5e1" : "#e2e8f0"}
+            strokeWidth={ring === 100 ? 1.5 : 1}
+          />
+        ))}
+        {categories.map((category, index) => {
+          const axisPoint = getRadarPoint(index, categories.length, 100, radius);
+          const labelPoint = getRadarPoint(index, categories.length, 100, labelRadius);
+          const lines = splitSvgText(category.label, 12, 2);
+          return (
+            <g key={category.key}>
+              <line x1={180} y1={180} x2={axisPoint.x} y2={axisPoint.y} stroke="#e2e8f0" strokeWidth="1" />
+              <text x={labelPoint.x} y={labelPoint.y - (lines.length - 1) * 5} textAnchor={getLabelAnchor(labelPoint.x)} fontSize="9" fontWeight="900" fill="#475569">
+                {lines.map((line, lineIndex) => (
+                  <tspan key={line} x={labelPoint.x} dy={lineIndex === 0 ? 0 : 11}>{line}</tspan>
+                ))}
+              </text>
+            </g>
+          );
+        })}
+        <polygon points={baselinePoints} fill="none" stroke="#64748b" strokeWidth="1.8" strokeDasharray="5 5" strokeLinejoin="round" />
+        <polygon points={currentPoints} fill="#1e94d2" fillOpacity="0.10" stroke="#1e94d2" strokeWidth="3" strokeLinejoin="round" />
+        {categories.map((category, index) => {
+          const baselinePoint = getRadarPoint(index, categories.length, category.valueA, radius);
+          const currentPoint = getRadarPoint(index, categories.length, category.valueB, radius);
+          return (
+            <g key={`${category.key}-pdf-points`}>
+              <circle cx={baselinePoint.x} cy={baselinePoint.y} r="3.5" fill="#ffffff" stroke="#64748b" strokeWidth="1.8" />
+              <circle cx={currentPoint.x} cy={currentPoint.y} r="4.5" fill="#1e94d2" stroke="#ffffff" strokeWidth="1.5" />
+            </g>
+          );
+        })}
+      </svg>
+    </section>
+  );
+}
+
+function ShapePdfMetricTable({ metrics }: { metrics: OverlayMetricComparisonDatum[] }) {
+  return (
+    <section className="shape-report-card h-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
+      <div className="grid grid-cols-[minmax(190px,1fr)_86px_86px_128px] gap-2 bg-slate-950 px-3 py-2 text-[7px] font-black uppercase tracking-[0.12em] text-white/60">
+        <div>Metric</div>
+        <div className="text-right">Report A</div>
+        <div className="text-right">Report B</div>
+        <div className="text-right">Change A → B</div>
+      </div>
+      {metrics.map((item) => (
+        <div key={`${item.key}-pdf-row`} className="grid grid-cols-[minmax(190px,1fr)_86px_86px_128px] gap-2 border-b border-slate-100 px-3 py-1.5 text-[10px] last:border-b-0">
+          <div className="min-w-0">
+            <p className="truncate font-black leading-tight text-slate-950">{item.label}</p>
+            <p className="text-[8px] font-semibold leading-tight text-slate-500">{item.directionLabel}</p>
+          </div>
+          <p className="whitespace-nowrap text-right font-black tabular-nums text-slate-700">{formatOverlayMetricValue(item.valueA, item)}</p>
+          <p className="whitespace-nowrap text-right font-black tabular-nums text-slate-700">{formatOverlayMetricValue(item.valueB, item)}</p>
+          <div className="text-right">
+            <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[8px] font-black ${item.tone}`}>{item.changeLabel}</span>
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function SnapshotCard({ profile }: { profile: Profile }) {
   return (
     <div className="rounded-3xl bg-white/10 p-5 print:bg-slate-100">
@@ -1505,6 +1928,14 @@ function svgBrandWordmark(x: number, y: number, width: number, height: number, h
 function svgScoreBar(x: number, y: number, width: number, score: NullableNumber | undefined): string {
   const fillWidth = isFiniteNumber(score) ? (width * clamp(score, 0, 100)) / 100 : 0;
   return `<rect x="${x}" y="${y}" width="${width}" height="16" rx="8" fill="#e5e7eb"/><rect x="${x}" y="${y}" width="${fillWidth}" height="16" rx="8" fill="${shareScoreColor(score)}"/>`;
+}
+
+function svgRightRoundedRect(x: number, y: number, width: number, height: number, radius: number, fill: string, attrs = ""): string {
+  if (width <= 0) return "";
+  const r = Math.min(radius, height / 2, width);
+  const right = x + width;
+  const bottom = y + height;
+  return `<path d="M ${x} ${y} H ${right - r} Q ${right} ${y} ${right} ${y + r} V ${bottom - r} Q ${right} ${bottom} ${right - r} ${bottom} H ${x} Z" fill="${fill}"${attrs ? ` ${attrs}` : ""}/>`;
 }
 
 function svgStarRating(x: number, y: number, rating: NullableNumber | undefined): string {
@@ -1690,6 +2121,7 @@ function getProgressSummaryRows(reportA: SavedReport, reportB: SavedReport): Pro
 
 function progressToneColors(tone: string): { fill: string; text: string } {
   if (tone.includes("emerald")) return { fill: "#dcfce7", text: "#166534" };
+  if (tone.includes("orange")) return { fill: "#ffedd5", text: "#9a3412" };
   if (tone.includes("rose")) return { fill: "#ffe4e6", text: "#be123c" };
   if (tone.includes("blue")) return { fill: "#dbeafe", text: "#1d4ed8" };
   return { fill: "#e2e8f0", text: "#475569" };
@@ -1883,6 +2315,229 @@ async function saveProgressStoryPng(athlete: AthleteProfileRecord, reportA: Save
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return;
     window.alert("Could not create the progress story image.");
+  }
+}
+
+function svgShapeRadar(categories: OverlayCategoryComparisonDatum[], centerX = 540, centerY = 540, radius = 168): string {
+  if (categories.length < 3) return "";
+  const rings = [25, 50, 75, 100];
+  const pointsFor = (valueKey: "valueA" | "valueB", ringRadius = radius) => categories.map((category, index) => {
+    const point = getRadarPoint(index, categories.length, category[valueKey], ringRadius, centerX, centerY);
+    return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+  }).join(" ");
+  const ringPolygons = rings.map((ring) => {
+    const points = categories.map((_, index) => {
+      const point = getRadarPoint(index, categories.length, ring, radius, centerX, centerY);
+      return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+    }).join(" ");
+    return `<polygon points="${points}" fill="none" stroke="${ring === 100 ? "#cbd5e1" : "#e2e8f0"}" stroke-width="${ring === 100 ? 2.2 : 1.6}"/>`;
+  }).join("");
+  const axes = categories.map((category, index) => {
+    const axisPoint = getRadarPoint(index, categories.length, 100, radius, centerX, centerY);
+    const labelPoint = getRadarPoint(index, categories.length, 100, radius + 62, centerX, centerY);
+    const anchor = getLabelAnchor(labelPoint.x, centerX);
+    return `
+      <line x1="${centerX}" y1="${centerY}" x2="${axisPoint.x}" y2="${axisPoint.y}" stroke="#e2e8f0" stroke-width="1.5"/>
+      ${svgLineGroup(splitSvgText(category.label, 15, 2), labelPoint.x, labelPoint.y, 22, `text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#475569"`)}
+    `;
+  }).join("");
+  const markers = categories.map((category, index) => {
+    const previousPoint = getRadarPoint(index, categories.length, category.valueA, radius, centerX, centerY);
+    const currentPoint = getRadarPoint(index, categories.length, category.valueB, radius, centerX, centerY);
+    return `
+      <circle cx="${previousPoint.x}" cy="${previousPoint.y}" r="5" fill="#ffffff" stroke="#64748b" stroke-width="3"/>
+      <circle cx="${currentPoint.x}" cy="${currentPoint.y}" r="6.5" fill="#1e94d2" stroke="#ffffff" stroke-width="2"/>
+    `;
+  }).join("");
+
+  return `
+    ${ringPolygons}
+    ${axes}
+    <polygon points="${pointsFor("valueA")}" fill="#64748b" fill-opacity="0.03" stroke="#64748b" stroke-width="3" stroke-dasharray="9 8" stroke-linejoin="round"/>
+    <polygon points="${pointsFor("valueB")}" fill="#1e94d2" fill-opacity="0.11" stroke="#1e94d2" stroke-width="5" stroke-linejoin="round"/>
+    ${markers}
+  `;
+}
+
+function svgShapeCategoryBar(category: OverlayCategoryComparisonDatum, x: number, y: number, width: number): string {
+  const previous = isFiniteNumber(category.valueA) ? clamp(category.valueA, 0, 100) : null;
+  const current = isFiniteNumber(category.valueB) ? clamp(category.valueB, 0, 100) : null;
+  const previousWidth = previous !== null ? (width * previous) / 100 : 0;
+  const currentWidth = current !== null ? (width * current) / 100 : 0;
+  const changeStart = previous !== null && current !== null ? (width * Math.min(previous, current)) / 100 : 0;
+  const changeWidth = previous !== null && current !== null ? (width * Math.abs(current - previous)) / 100 : 0;
+  const markerPercent = getShapeBarMarkerPercent(previous);
+  const markerX = markerPercent !== null ? x + (width * markerPercent) / 100 : x;
+  const markerPillWidth = 138;
+  const markerPillX = markerPercent !== null && markerPercent >= 92 ? markerX - markerPillWidth : markerPercent !== null && markerPercent <= 8 ? markerX : markerX - markerPillWidth / 2;
+  const markerTextX = markerPillX + markerPillWidth / 2;
+  const cardHeight = 140;
+  const barY = y + 116;
+  const barHeight = 14;
+  const previousSegment = previous !== null
+    ? `<rect x="${x}" y="${barY}" width="${previousWidth}" height="${barHeight}" rx="7" fill="#d8eef9"/><rect x="${x}" y="${barY}" width="${previousWidth}" height="${barHeight}" rx="7" fill="url(#shape-bar-hatch)"/>`
+    : "";
+  const fillSegments = previous !== null && current !== null && current > previous
+    ? `${previousSegment}${svgRightRoundedRect(x + changeStart, barY, changeWidth, barHeight, 7, "#1e94d2")}`
+    : previous !== null && current !== null && current < previous
+      ? `${previousSegment}<rect x="${x}" y="${barY}" width="${currentWidth}" height="${barHeight}" rx="7" fill="#1e94d2"/>${svgRightRoundedRect(x + changeStart, barY, changeWidth, barHeight, 7, "#fb923c", 'opacity="0.78"')}`
+      : previousSegment || `<rect x="${x}" y="${barY}" width="${currentWidth}" height="${barHeight}" rx="7" fill="#1e94d2"/>`;
+  const colors = progressToneColors(getCategoryChangeTone(category.change));
+
+  return `
+    <rect x="${x}" y="${y}" width="${width + 180}" height="${cardHeight}" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="${x + 18}" y="${y + 30}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b" letter-spacing="1">${escapeSvgText(category.label.toUpperCase())}</text>
+    <text x="${x + 18}" y="${y + 56}" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#020617">${formatScoreValue(category.valueA)} → ${formatScoreValue(category.valueB)}</text>
+    <text x="${x + 18}" y="${y + 82}" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#64748b">Change A → B:</text>
+    <rect x="${x + 164}" y="${y + 62}" width="54" height="26" rx="13" fill="${colors.fill}"/>
+    <text x="${x + 191}" y="${y + 81}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="900" fill="${colors.text}">${formatCategoryChange(category.change)}</text>
+    <text x="${x + width + 142}" y="${y + 48}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="900" fill="#020617">${formatScoreValue(category.valueB)}</text>
+    <text x="${x + width + 142}" y="${y + 70}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="900" fill="#94a3b8" letter-spacing="1">CURRENT</text>
+    <rect x="${x}" y="${barY}" width="${width}" height="${barHeight}" rx="7" fill="#e5e7eb"/>
+    ${fillSegments}
+    ${previous !== null ? `<rect x="${markerPillX}" y="${y + 88}" width="${markerPillWidth}" height="24" rx="12" fill="#f1f5f9"/><text x="${markerTextX}" y="${y + 105}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="900" fill="#475569">Previous: ${formatScoreValue(category.valueA)}</text><line x1="${markerX}" y1="${y + 110}" x2="${markerX}" y2="${y + 138}" stroke="#0f4f78" stroke-width="4" stroke-linecap="round"/>` : ""}
+  `;
+}
+
+function getTopShapeMetricChanges(reportA: SavedReport, reportB: SavedReport, limit = 4): OverlayMetricComparisonDatum[] {
+  const metrics = getOverlayMetricComparisonData(reportA, reportB).filter((item) => isFiniteNumber(item.change));
+  if (!metrics.length) return getOverlayMetricComparisonData(reportA, reportB).slice(0, limit);
+  return [...metrics].sort((a, b) => Math.abs(b.change || 0) - Math.abs(a.change || 0)).slice(0, limit);
+}
+
+function buildShapeStorySvg(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport, wordmarkHref = brandAssets.wordmarkWhite): string {
+  const categories = getOverlayCategoryComparisonData(reportA, reportB);
+  const metrics = getTopShapeMetricChanges(reportA, reportB, 3);
+  const overallChange = calculateOverlayChange(reportA.overall, reportB.overall);
+  const nameLines = splitSvgText(athlete.name || "Athlete Name", 18, 2);
+  const takeawayLines = splitSvgText(getProfileOverlayStoryTakeaway(athlete, reportA, reportB), 58, 2);
+  const overallColors = progressToneColors(getCategoryChangeTone(overallChange));
+  const categoryCards = categories.map((category, index) => svgShapeCategoryBar(category, 92, 816 + index * 148, 680)).join("");
+  const metricRows = metrics.map((metric, index) => {
+    const y = 1488 + index * 56;
+    const colors = progressToneColors(metric.tone);
+    const valueA = isFiniteNumber(metric.valueA) ? metric.valueA.toFixed(metric.decimals) : "—";
+    const valueB = formatOverlayMetricValue(metric.valueB, metric);
+    return `
+      <rect x="92" y="${y - 36}" width="896" height="50" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+      <text x="120" y="${y - 14}" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#020617">${escapeSvgText(metric.label)}</text>
+      <text x="120" y="${y + 8}" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#64748b">${escapeSvgText(`${valueA} → ${valueB}`)}</text>
+      <rect x="754" y="${y - 24}" width="210" height="28" rx="14" fill="${colors.fill}"/>
+      <text x="859" y="${y - 4}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="900" fill="${colors.text}">${escapeSvgText(metric.changeLabel)}</text>
+    `;
+  }).join("");
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+      <defs>
+        <pattern id="shape-bar-hatch" patternUnits="userSpaceOnUse" width="12" height="12" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="12" stroke="#1e94d2" stroke-width="3" opacity="0.32"/>
+        </pattern>
+      </defs>
+      <rect width="1080" height="1920" fill="#f8fafc"/>
+      <rect x="42" y="38" width="996" height="238" rx="38" fill="#231f20"/>
+      ${svgBrandWordmark(76, 76, 110, 38, wordmarkHref)}
+      <text x="214" y="106" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#ffffff" opacity="0.58" letter-spacing="7">PROFILE SHAPE COMPARISON</text>
+      <rect x="775" y="88" width="226" height="104" rx="26" fill="#ffffff"/>
+      <text x="888" y="126" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#64748b">OVERALL</text>
+      <text x="888" y="172" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="900" fill="#020617">${formatScoreValue(reportA.overall)} → ${formatScoreValue(reportB.overall)}</text>
+      <rect x="800" y="206" width="176" height="32" rx="16" fill="${overallColors.fill}"/>
+      <text x="888" y="228" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="900" fill="${overallColors.text}">Change A → B: ${formatCategoryChange(overallChange)}</text>
+      ${svgLineGroup(nameLines, 76, 180, 54, 'font-family="Inter, Arial, sans-serif" font-size="58" font-weight="900" fill="#ffffff"')}
+      <text x="76" y="244" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff" opacity="0.62">Previous ${escapeSvgText(formatDate(reportA.date))} · Current ${escapeSvgText(formatDate(reportB.date))}</text>
+
+      <rect x="62" y="316" width="956" height="450" rx="32" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="92" y="372" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="5">PROFILE SHAPE</text>
+      <rect x="92" y="400" width="24" height="4" rx="2" fill="#64748b"/>
+      <text x="128" y="407" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#64748b">Previous Report</text>
+      <circle cx="104" cy="438" r="6" fill="#1e94d2"/>
+      <text x="128" y="444" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#167bb0">Current Report</text>
+      <g>${svgShapeRadar(categories, 540, 548, 136)}</g>
+
+      <text x="92" y="800" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="5">CATEGORY SCORE COMPARISON</text>
+      ${categoryCards}
+
+      <rect x="62" y="1420" width="956" height="212" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="92" y="1468" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="5">KEY TEST CHANGES</text>
+      ${metricRows}
+
+      <rect x="62" y="1650" width="956" height="138" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="92" y="1694" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#64748b" letter-spacing="4">COACH TAKEAWAY</text>
+      ${svgLineGroup(takeawayLines, 92, 1732, 28, 'font-family="Inter, Arial, sans-serif" font-size="23" font-weight="800" fill="#334155"')}
+      <text x="540" y="1868" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#94a3b8" letter-spacing="2">POWERED BY  <tspan fill="#1e94d2">PEAQ ANALYTICS</tspan></text>
+    </svg>
+  `;
+}
+
+function getShapeStoryFileName(athlete: AthleteProfileRecord): string {
+  return `${slugify(athlete.name || "peaq-shape-comparison") || "peaq-shape-comparison"}-shape-story.png`;
+}
+
+async function renderShapeStoryPngBlob(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): Promise<Blob> {
+  const svg = buildShapeStorySvg(athlete, reportA, reportB, await getSvgWordmarkHref());
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const svgUrl = URL.createObjectURL(svgBlob);
+  const image = new Image();
+
+  return new Promise((resolve, reject) => {
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1080;
+      canvas.height = 1920;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        URL.revokeObjectURL(svgUrl);
+        reject(new Error("Canvas is unavailable."));
+        return;
+      }
+      context.drawImage(image, 0, 0);
+      URL.revokeObjectURL(svgUrl);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("PNG export failed."));
+          return;
+        }
+        resolve(blob);
+      }, "image/png");
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+      reject(new Error("Image export failed."));
+    };
+
+    image.src = svgUrl;
+  });
+}
+
+async function saveShapeStoryPng(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): Promise<void> {
+  try {
+    const blob = await renderShapeStoryPngBlob(athlete, reportA, reportB);
+    const fileName = getShapeStoryFileName(athlete);
+    const file = new File([blob], fileName, { type: "image/png" });
+    const shareData: ShareData = {
+      title: "PEAQ Shape Story",
+      text: `${athlete.name || "Athlete"} Profile Shape Comparison`,
+      files: [file],
+    };
+    const shareNavigator = navigator as Navigator & {
+      canShare?: (data?: ShareData) => boolean;
+      share?: (data?: ShareData) => Promise<void>;
+    };
+
+    if (typeof shareNavigator.share === "function" && typeof shareNavigator.canShare === "function" && shareNavigator.canShare({ files: [file] })) {
+      try {
+        await shareNavigator.share(shareData);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+
+    downloadBlob(blob, fileName);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    window.alert("Could not create the shape story image.");
   }
 }
 
@@ -2149,6 +2804,130 @@ function ProgressStoryExport({ athlete, reportA, reportB, onBack }: { athlete: A
 
         <section className="mx-auto aspect-[9/16] overflow-hidden rounded-[2rem] bg-slate-100 shadow-2xl" style={{ width: "min(100%, 430px, calc(56.25dvh - 1.40625rem))" }}>
           <img src={previewSrc} alt={`${athlete.name} PEAQ progress story`} className="h-full w-full object-cover" />
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function ShapeStoryExport({ athlete, reportA, reportB, onBack }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void }) {
+  const fallbackPreviewSrc = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildShapeStorySvg(athlete, reportA, reportB))}`, [athlete, reportA, reportB]);
+  const [previewSrc, setPreviewSrc] = useState(fallbackPreviewSrc);
+
+  useEffect(() => {
+    let isActive = true;
+
+    void getSvgWordmarkHref()
+      .then((wordmarkHref) => {
+        if (isActive) setPreviewSrc(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildShapeStorySvg(athlete, reportA, reportB, wordmarkHref))}`);
+      })
+      .catch(() => {
+        if (isActive) setPreviewSrc(fallbackPreviewSrc);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [athlete, fallbackPreviewSrc, reportA, reportB]);
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <button onClick={onBack} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50">Back</button>
+          <button onClick={() => void saveShapeStoryPng(athlete, reportA, reportB)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-[#1678ad]">Save Shape Story</button>
+        </div>
+
+        <section className="mx-auto aspect-[9/16] overflow-hidden rounded-[2rem] bg-slate-100 shadow-2xl" style={{ width: "min(100%, 430px, calc(56.25dvh - 1.40625rem))" }}>
+          <img src={previewSrc} alt={`${athlete.name} PEAQ shape comparison story`} className="h-full w-full object-cover" />
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function ShapeComparisonReport({ athlete, reportA, reportB, onBack, onShareCard }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void; onShareCard: () => void }) {
+  const categories = getOverlayCategoryComparisonData(reportA, reportB);
+  const metrics = getOverlayMetricComparisonData(reportA, reportB);
+  const overallChange = calculateOverlayChange(reportA.overall, reportB.overall);
+  const takeaway = getProfileOverlayTakeaway(athlete, reportA, reportB);
+
+  return (
+    <main className="min-h-screen bg-white p-3 text-slate-950 print:p-0">
+      <style>{`
+        @page { size: letter landscape; margin: 0.25in; }
+        @media screen {
+          .shape-report-frame { overflow-x: auto; padding-bottom: 1rem; }
+          .shape-report-page { width: 10.5in; max-width: none; min-height: 8in; }
+        }
+        @media print {
+          html, body { background: #ffffff !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          .no-print { display: none !important; }
+          .shape-report-frame { overflow: visible; padding: 0; }
+          .shape-report-page { width: 10.5in; height: 8in; overflow: hidden; page-break-inside: avoid; page-break-after: avoid; }
+          .shape-report-card { break-inside: avoid; }
+        }
+      `}</style>
+
+      <div className="no-print mx-auto mb-4 flex max-w-7xl flex-wrap gap-3">
+        <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
+        <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
+        <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Shape Story</button>
+      </div>
+
+      <div className="shape-report-frame">
+        <section className="shape-report-page mx-auto flex flex-col gap-2 overflow-hidden bg-white text-slate-950" style={{ height: "8in" }}>
+          <div className="shape-report-card rounded-[1.25rem] bg-[#231f20] p-4 text-white">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <BrandMark variant="wordmark" tone="light" className="h-5 max-w-[96px]" />
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/50">Profile Shape Comparison</p>
+                </div>
+                <h1 className="mt-2 text-3xl font-black tracking-tight">{athlete.name}</h1>
+                <p className="mt-1 text-sm font-semibold text-white/60">Previous {formatDate(reportA.date)} → Current {formatDate(reportB.date)}</p>
+              </div>
+              <div className="rounded-xl bg-white px-4 py-2 text-right text-slate-950 shadow-sm">
+                <p className="text-[9px] font-black uppercase tracking-wide text-slate-500">Overall</p>
+                <p className="text-base font-black">{formatScoreValue(reportA.overall)} → {formatScoreValue(reportB.overall)}</p>
+                <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-black ${getCategoryChangeTone(overallChange)}`}>Change A → B: {formatCategoryChange(overallChange)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid min-h-0 grid-cols-[0.88fr_1.12fr] gap-2" style={{ height: "4.2in" }}>
+            <ShapePdfWheelCard categories={categories} reportA={reportA} reportB={reportB} />
+            <section className="shape-report-card h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[8px] font-black uppercase tracking-[0.16em] text-slate-500">Category Score Comparison</p>
+                  <h2 className="text-base font-black leading-tight tracking-tight text-slate-950">Current Score vs Previous Report</h2>
+                </div>
+                <div className="rounded-xl bg-white px-3 py-1 text-right shadow-sm">
+                  <p className="text-[8px] font-black uppercase tracking-wide text-slate-500">Overall</p>
+                  <p className="text-sm font-black text-slate-950">{formatScoreValue(reportA.overall)} <span className="text-slate-400">→</span> {formatScoreValue(reportB.overall)}</p>
+                </div>
+              </div>
+              <div className="mt-2 grid gap-1.5">
+                {categories.map((category) => <CategoryScoreComparisonBar key={`${category.key}-pdf`} category={category} variant="pdf" />)}
+              </div>
+            </section>
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-[1.34fr_0.66fr] gap-2 overflow-hidden">
+            <ShapePdfMetricTable metrics={metrics} />
+            <section className="shape-report-card flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-3">
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-[0.16em] text-slate-500">Coach Takeaway</p>
+                <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-700">{takeaway}</p>
+              </div>
+              <div className="mt-auto flex items-center justify-end gap-1 pt-3 text-[8px] font-black uppercase tracking-[0.14em] text-slate-400">
+                <span>Powered by</span>
+                <span className="text-[#1e94d2]">PEAQ Analytics</span>
+              </div>
+            </section>
+          </div>
         </section>
       </div>
     </main>
@@ -3397,6 +4176,144 @@ function getProgressRows(keys: ComparisonKey[], reportA: SavedReport, reportB: S
   });
 }
 
+function calculateOverlayChange(a: NullableNumber | undefined, b: NullableNumber | undefined): NullableNumber {
+  return isFiniteNumber(a) && isFiniteNumber(b) ? b - a : null;
+}
+
+function formatScoreValue(value: NullableNumber | undefined): string {
+  return isFiniteNumber(value) ? value.toFixed(0) : "—";
+}
+
+function getOverlayMetricDefinition(key: MetricKey): ComparisonMetric {
+  return overlayMetricDefinitions[key];
+}
+
+function formatOverlayMetricValue(value: NullableNumber | undefined, metric: ComparisonMetric): string {
+  if (!isFiniteNumber(value)) return "—";
+  const display = value.toFixed(metric.decimals);
+  return metric.unit ? `${display} ${metric.unit}` : display;
+}
+
+function isOverlayLowerBetter(metricKey: MetricKey): boolean {
+  return overlayMetricDefinitions[metricKey].direction === "lower";
+}
+
+function getOverlayMetricDirectionWord(metricKey: MetricKey, change: number): string {
+  if (Math.abs(change) < 0.005) return "no change";
+  if (metricKey === "sprint10" || metricKey === "drill505") return change < 0 ? "faster" : "slower";
+  if (metricKey === "codDeficit") return change < 0 ? "lower" : "higher";
+  if (metricKey === "relativeStrength") return change > 0 ? "stronger" : "lower";
+  return change > 0 ? "higher" : "lower";
+}
+
+function formatOverlayMetricChange(metricKey: MetricKey, aValue: NullableNumber | undefined, bValue: NullableNumber | undefined): string {
+  const metric = getOverlayMetricDefinition(metricKey);
+  const change = calculateOverlayChange(aValue, bValue);
+  if (!isFiniteNumber(change)) return "—";
+  const tolerance = Math.pow(10, -metric.decimals) / 2;
+  const displayChange = Math.abs(change) < tolerance ? 0 : change;
+  const prefix = displayChange > 0 ? "+" : "";
+  return `${prefix}${displayChange.toFixed(metric.decimals)} ${getOverlayMetricDirectionWord(metricKey, displayChange)}`;
+}
+
+function getOverlayMetricChangeTone(metricKey: MetricKey, aValue: NullableNumber | undefined, bValue: NullableNumber | undefined): string {
+  const metric = getOverlayMetricDefinition(metricKey);
+  const change = calculateOverlayChange(aValue, bValue);
+  if (!isFiniteNumber(change)) return "bg-slate-100 text-slate-500";
+  const tolerance = Math.pow(10, -metric.decimals) / 2;
+  if (Math.abs(change) < tolerance) return "bg-slate-100 text-slate-600";
+  const improved = isOverlayLowerBetter(metricKey) ? change < 0 : change > 0;
+  return improved ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-700";
+}
+
+function getOverlayCategoryComparisonData(reportA: SavedReport, reportB: SavedReport): OverlayCategoryComparisonDatum[] {
+  return overlayCategoryKeys.map((key) => {
+    const bucket = reportB.profile.bucketItems.find((item) => item.key === key)
+      || reportA.profile.bucketItems.find((item) => item.key === key);
+    const valueA = getReportBucketScore(reportA, key);
+    const valueB = getReportBucketScore(reportB, key);
+    return {
+      key,
+      label: bucket?.label || key,
+      valueA,
+      valueB,
+      change: calculateOverlayChange(valueA, valueB),
+    };
+  });
+}
+
+function getOverlayMetricComparisonData(reportA: SavedReport, reportB: SavedReport): OverlayMetricComparisonDatum[] {
+  return overlayMetricKeys.map((key) => {
+    const metric = getOverlayMetricDefinition(key);
+    const valueA = getComparisonValue(reportA, key);
+    const valueB = getComparisonValue(reportB, key);
+    return {
+      ...metric,
+      key,
+      valueA,
+      valueB,
+      change: calculateOverlayChange(valueA, valueB),
+      changeLabel: formatOverlayMetricChange(key, valueA, valueB),
+      directionLabel: isOverlayLowerBetter(key) ? "Lower is better" : "Higher is better",
+      tone: getOverlayMetricChangeTone(key, valueA, valueB),
+    };
+  });
+}
+
+function getCategoryChangeTone(change: NullableNumber | undefined): string {
+  if (!isFiniteNumber(change)) return "bg-slate-100 text-slate-500";
+  if (Math.abs(change) < 0.5) return "bg-slate-100 text-slate-600";
+  return change > 0 ? "bg-emerald-100 text-emerald-800" : "bg-orange-100 text-orange-800";
+}
+
+function formatCategoryChange(change: NullableNumber | undefined): string {
+  if (!isFiniteNumber(change)) return "—";
+  if (Math.abs(change) < 0.5) return "0";
+  return `${change > 0 ? "+" : ""}${change.toFixed(0)}`;
+}
+
+function getProfileOverlayTakeaway(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): string {
+  const name = getAthleteDisplayName(athlete) || athlete.name || "This athlete";
+  const categories = getOverlayCategoryComparisonData(reportA, reportB).filter((item) => isFiniteNumber(item.change));
+  const strongestCategories = [...categories]
+    .filter((item) => (item.change || 0) > 0)
+    .sort((a, b) => (b.change || 0) - (a.change || 0))
+    .slice(0, 2)
+    .map((item) => item.label);
+  const metric = getOverlayMetricComparisonData(reportA, reportB)
+    .filter((item) => isFiniteNumber(item.change) && item.changeLabel !== "0.00 no change" && item.changeLabel !== "0.0 no change")
+    .sort((a, b) => Math.abs(b.change || 0) - Math.abs(a.change || 0))[0];
+  const maxed = categories
+    .filter((item) => isFiniteNumber(item.valueB) && (item.valueB || 0) >= 99 && (item.change || 0) >= 0)
+    .map((item) => item.label)
+    .slice(0, 2);
+  const maintained = categories
+    .filter((item) => isFiniteNumber(item.valueB) && (item.valueB || 0) >= 80 && (item.change || 0) >= 0)
+    .map((item) => item.label)
+    .slice(0, 2);
+  const overallText = isFiniteNumber(reportA.overall) && isFiniteNumber(reportB.overall)
+    ? `improved from ${formatScoreValue(reportA.overall)} to ${formatScoreValue(reportB.overall)} overall`
+    : "has incomplete overall score data across the selected reports";
+  const driverText = strongestCategories.length
+    ? `driven by ${strongestCategories.join(" and ")}`
+    : "with the profile shape staying mostly stable";
+  const metricChange = metric?.changeLabel.replace(/\s+(higher|lower|faster|slower|stronger)$/i, "");
+  const metricVerb = metric?.tone.includes("emerald") ? "improved" : "changed";
+  const metricText = metric && metric.changeLabel !== "—"
+    ? `${metric.label} ${metricVerb} ${metricChange}`
+    : "Raw test changes are limited by missing values";
+  const maintainedText = maxed.length
+    ? ` while ${maxed.join(" and ")} remained maxed`
+    : maintained.length ? ` while ${maintained.join(" and ")} stayed strong` : "";
+
+  return `${name} ${overallText}, ${driverText}. ${metricText}${maintainedText}.`;
+}
+
+function getProfileOverlayStoryTakeaway(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): string {
+  const firstSentence = getProfileOverlayTakeaway(athlete, reportA, reportB).split(". ")[0]?.replace(/\.$/, "");
+  return firstSentence ? `${firstSentence}.` : "Use the current report to guide the next training emphasis.";
+}
+
 function reportOptionLabel(report: SavedReport, index: number): string {
   const label = [report.date, report.archetype].filter(Boolean).join(" · ");
   return `${label || "Saved Report"}${index === 0 ? " (Latest)" : ""}`;
@@ -3728,20 +4645,37 @@ function CsvQuickFixSelect({ label, value, onChange, children }: { label: string
   );
 }
 
-function ReportComparison({ reports, onPrintComparison, onShareComparison }: { reports: SavedReport[]; onPrintComparison?: (reportA: SavedReport, reportB: SavedReport) => void; onShareComparison?: (reportA: SavedReport, reportB: SavedReport) => void }) {
-  const [reportAId, setReportAId] = useState(reports[1]?.id || reports[0]?.id || "");
-  const [reportBId, setReportBId] = useState(reports[0]?.id || "");
+function ReportComparison({ athlete, reports, onPrintComparison, onShareComparison, onPrintShapeComparison, onShareShapeComparison }: { athlete: AthleteProfileRecord; reports: SavedReport[]; onPrintComparison?: (reportA: SavedReport, reportB: SavedReport) => void; onShareComparison?: (reportA: SavedReport, reportB: SavedReport) => void; onPrintShapeComparison?: (reportA: SavedReport, reportB: SavedReport) => void; onShareShapeComparison?: (reportA: SavedReport, reportB: SavedReport) => void }) {
+  const reportsKey = reports.map((report) => report.id).join("|");
+  const defaultReportAId = reports[1]?.id || reports[0]?.id || "";
+  const defaultReportBId = reports[0]?.id || "";
+  const [comparisonState, setComparisonState] = useState({
+    reportsKey,
+    reportAId: defaultReportAId,
+    reportBId: defaultReportBId,
+    comparisonView: "standard" as "standard" | "overlay",
+  });
+  const stateMatchesReports = comparisonState.reportsKey === reportsKey;
+  const reportAId = stateMatchesReports ? comparisonState.reportAId : defaultReportAId;
+  const reportBId = stateMatchesReports ? comparisonState.reportBId : defaultReportBId;
+  const comparisonView = stateMatchesReports ? comparisonState.comparisonView : "standard";
 
-  useEffect(() => {
-    setReportAId(reports[1]?.id || reports[0]?.id || "");
-    setReportBId(reports[0]?.id || "");
-  }, [reports]);
+  function updateComparisonState(updates: Partial<Omit<typeof comparisonState, "reportsKey">>): void {
+    setComparisonState({
+      reportsKey,
+      reportAId,
+      reportBId,
+      comparisonView,
+      ...updates,
+    });
+  }
 
   if (reports.length < 2) return null;
 
   const reportA = reports.find((report) => report.id === reportAId) || reports[0];
   const reportB = reports.find((report) => report.id === reportBId) || reports[1] || reports[0];
   if (!reportA || !reportB) return null;
+  const sameReport = reportA.id === reportB.id;
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -3751,43 +4685,83 @@ function ReportComparison({ reports, onPrintComparison, onShareComparison }: { r
           <h2 className="text-2xl font-black">Compare Reports</h2>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[760px] lg:grid-cols-[1fr_1fr_auto_auto] lg:items-end">
-          <SelectField label="Report A (From)" value={reportA.id} onChange={setReportAId}>
+          <SelectField label="Report A (From)" value={reportA.id} onChange={(value) => updateComparisonState({ reportAId: value })}>
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
-          <SelectField label="Report B (To)" value={reportB.id} onChange={setReportBId}>
+          <SelectField label="Report B (To)" value={reportB.id} onChange={(value) => updateComparisonState({ reportBId: value })}>
             {reports.map((report, index) => <option key={report.id} value={report.id}>{reportOptionLabel(report, index)}</option>)}
           </SelectField>
-          {onPrintComparison ? <button onClick={() => onPrintComparison(reportA, reportB)} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#167bb0]">Print Progress Report</button> : null}
-          {onShareComparison ? <button onClick={() => onShareComparison(reportA, reportB)} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Save Progress Story</button> : null}
+          {comparisonView === "overlay" ? (
+            <>
+              {onPrintShapeComparison ? <button onClick={() => onPrintShapeComparison(reportA, reportB)} disabled={sameReport} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#167bb0] disabled:cursor-not-allowed disabled:opacity-40">Print Shape Comparison</button> : null}
+              {onShareShapeComparison ? <button onClick={() => onShareShapeComparison(reportA, reportB)} disabled={sameReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">Save Shape Story</button> : null}
+            </>
+          ) : (
+            <>
+              {onPrintComparison ? <button onClick={() => onPrintComparison(reportA, reportB)} disabled={sameReport} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#167bb0] disabled:cursor-not-allowed disabled:opacity-40">Print Progress Report</button> : null}
+              {onShareComparison ? <button onClick={() => onShareComparison(reportA, reportB)} disabled={sameReport} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">Save Progress Story</button> : null}
+            </>
+          )}
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-        <div className="hidden grid-cols-[1.25fr_0.85fr_0.85fr_0.9fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 md:grid">
-          <div>Metric</div><div>Report A</div><div>Report B</div><div>Change A -&gt; B</div>
+      {sameReport ? (
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+          Choose two different saved reports to compare.
         </div>
-        <div className="divide-y divide-slate-100">
-          {comparisonMetrics.map((metric) => {
-            const valueA = getComparisonValue(reportA, metric.key);
-            const valueB = getComparisonValue(reportB, metric.key);
-            const change = getComparisonChange(metric, reportA, reportB);
-            return (
-              <div key={metric.key} className="grid gap-3 px-4 py-3 md:grid-cols-[1.25fr_0.85fr_0.85fr_0.9fr] md:items-center">
-                <div>
-                  <p className="font-black text-slate-950">{metric.label}</p>
-                  <p className="text-xs font-semibold text-slate-500">{metric.direction === "lower" ? "Lower is better" : "Higher is better"}</p>
-                </div>
-                <div className="text-sm font-black text-slate-800">{formatComparisonValue(valueA, metric)}</div>
-                <div className="text-sm font-black text-slate-800">{formatComparisonValue(valueB, metric)}</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full px-3 py-1 text-xs font-black ${change.tone}`}>{change.label}</span>
-                  <span className="text-sm font-black text-slate-700">{change.value}</span>
-                </div>
+      ) : (
+        <>
+          <div className="mt-5 inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1">
+            <button
+              type="button"
+              onClick={() => updateComparisonState({ comparisonView: "standard" })}
+              className={`rounded-xl px-4 py-2 text-sm font-black ${comparisonView === "standard" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              Standard Comparison
+            </button>
+            <button
+              type="button"
+              onClick={() => updateComparisonState({ comparisonView: "overlay" })}
+              className={`rounded-xl px-4 py-2 text-sm font-black ${comparisonView === "overlay" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              Profile Shape Comparison
+            </button>
+          </div>
+
+          {comparisonView === "overlay" ? (
+            // Profile Shape Comparison is intentionally additive. Keep standard comparison exports routed to the original progress report/story assets above.
+            <ProfileShapeComparison athlete={athlete} reportA={reportA} reportB={reportB} />
+          ) : (
+            // Standard Comparison remains the default view so future overlay work does not replace the original comparison table or exports.
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+              <div className="hidden grid-cols-[1.25fr_0.85fr_0.85fr_0.9fr] gap-3 bg-slate-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white/60 md:grid">
+                <div>Metric</div><div>Report A</div><div>Report B</div><div>Change A -&gt; B</div>
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <div className="divide-y divide-slate-100">
+                {comparisonMetrics.map((metric) => {
+                  const valueA = getComparisonValue(reportA, metric.key);
+                  const valueB = getComparisonValue(reportB, metric.key);
+                  const change = getComparisonChange(metric, reportA, reportB);
+                  return (
+                    <div key={metric.key} className="grid gap-3 px-4 py-3 md:grid-cols-[1.25fr_0.85fr_0.85fr_0.9fr] md:items-center">
+                      <div>
+                        <p className="font-black text-slate-950">{metric.label}</p>
+                        <p className="text-xs font-semibold text-slate-500">{metric.direction === "lower" ? "Lower is better" : "Higher is better"}</p>
+                      </div>
+                      <div className="text-sm font-black text-slate-800">{formatComparisonValue(valueA, metric)}</div>
+                      <div className="text-sm font-black text-slate-800">{formatComparisonValue(valueB, metric)}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-3 py-1 text-xs font-black ${change.tone}`}>{change.label}</span>
+                        <span className="text-sm font-black text-slate-700">{change.value}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
@@ -3917,6 +4891,8 @@ function AthleteProfile({
   onOpenReport,
   onPrintComparison,
   onShareComparison,
+  onPrintShapeComparison,
+  onShareShapeComparison,
   onUpdateAthlete,
 }: {
   athlete: AthleteProfileRecord;
@@ -3927,6 +4903,8 @@ function AthleteProfile({
   onOpenReport: (report: SavedReport) => void;
   onPrintComparison: (reportA: SavedReport, reportB: SavedReport) => void;
   onShareComparison: (reportA: SavedReport, reportB: SavedReport) => void;
+  onPrintShapeComparison: (reportA: SavedReport, reportB: SavedReport) => void;
+  onShareShapeComparison: (reportA: SavedReport, reportB: SavedReport) => void;
   onUpdateAthlete: (athleteId: string, updates: AthleteProfileForm) => void;
 }) {
   const archived = isArchivedAthlete(athlete);
@@ -3962,7 +4940,7 @@ function AthleteProfile({
         {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
         <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
-        <ReportComparison reports={athlete.reports} onPrintComparison={onPrintComparison} onShareComparison={onShareComparison} />
+        <ReportComparison athlete={athlete} reports={athlete.reports} onPrintComparison={onPrintComparison} onShareComparison={onShareComparison} onPrintShapeComparison={onPrintShapeComparison} onShareShapeComparison={onShareShapeComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
       </div>
     </main>
@@ -4665,6 +5643,7 @@ export default function AthleteProfilingMVP() {
   const [printData, setPrintData] = useState<AthleteData | null>(null);
   const [printProfile, setPrintProfile] = useState<Profile | null>(null);
   const [progressPrint, setProgressPrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
+  const [shapePrint, setShapePrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
   const [shareCardReturn, setShareCardReturn] = useState<AppHistoryState>({ view: "workspace", selectedAthleteId: null, selectedReportId: null });
   const [passwordRecovery, setPasswordRecovery] = useState<PasswordRecoverySession | null>(null);
 
@@ -4942,6 +5921,16 @@ export default function AthleteProfilingMVP() {
     navigate("progress-share-card", { athleteId: athlete.id, reportId: null });
   }
 
+  function openShapeComparisonReport(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): void {
+    setShapePrint({ athlete, reportA, reportB });
+    navigate("shape-print", { athleteId: athlete.id, reportId: null });
+  }
+
+  function openShapeComparisonStory(athlete: AthleteProfileRecord, reportA: SavedReport, reportB: SavedReport): void {
+    setShapePrint({ athlete, reportA, reportB });
+    navigate("shape-share-card", { athleteId: athlete.id, reportId: null });
+  }
+
   function saveReport(data: AthleteData, profile: Profile): void {
     if (!coach || !data.name.trim()) {
       alert("Add an athlete name before saving this report.");
@@ -5115,12 +6104,14 @@ export default function AthleteProfilingMVP() {
   if (view === "share-card" && printData && printProfile) return <ShareCardExport data={printData} profile={printProfile} onBack={returnFromShareCard} />;
   if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} onShareCard={() => openProgressStory(progressPrint.athlete, progressPrint.reportA, progressPrint.reportB)} />;
   if (view === "progress-share-card" && progressPrint) return <ProgressStoryExport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} />;
+  if (view === "shape-print" && shapePrint) return <ShapeComparisonReport athlete={shapePrint.athlete} reportA={shapePrint.reportA} reportB={shapePrint.reportB} onBack={() => openAthlete(shapePrint.athlete.id)} onShareCard={() => openShapeComparisonStory(shapePrint.athlete, shapePrint.reportA, shapePrint.reportB)} />;
+  if (view === "shape-share-card" && shapePrint) return <ShapeStoryExport athlete={shapePrint.athlete} reportA={shapePrint.reportA} reportB={shapePrint.reportB} onBack={() => openAthlete(shapePrint.athlete.id)} />;
   if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => builderAthleteId && !builderReportId ? openAthlete(builderAthleteId) : goWorkspace()} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "builder", selectedAthleteId: builderAthleteId, selectedReportId: builderReportId })} mode={builderReportId ? "correction" : "new"} />;
   if (view === "csv") return <CsvImport coach={coach} onBack={goWorkspace} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); navigate("builder", { athleteId: null, reportId: null }); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return renderWorkspace(coach);
-    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onShareComparison={(reportA, reportB) => openProgressStory(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} />;
+    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onShareComparison={(reportA, reportB) => openProgressStory(athlete, reportA, reportB)} onPrintShapeComparison={(reportA, reportB) => openShapeComparisonReport(athlete, reportA, reportB)} onShareShapeComparison={(reportA, reportB) => openShapeComparisonStory(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
