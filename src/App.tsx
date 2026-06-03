@@ -2318,7 +2318,7 @@ async function saveProgressStoryPng(athlete: AthleteProfileRecord, reportA: Save
   }
 }
 
-function svgShapeRadar(categories: OverlayCategoryComparisonDatum[], centerX = 540, centerY = 540, radius = 168): string {
+function svgShapeRadar(categories: OverlayCategoryComparisonDatum[], centerX = 540, centerY = 540, radius = 196, labelRadius = radius + 56): string {
   if (categories.length < 3) return "";
   const rings = [25, 50, 75, 100];
   const pointsFor = (valueKey: "valueA" | "valueB", ringRadius = radius) => categories.map((category, index) => {
@@ -2334,27 +2334,27 @@ function svgShapeRadar(categories: OverlayCategoryComparisonDatum[], centerX = 5
   }).join("");
   const axes = categories.map((category, index) => {
     const axisPoint = getRadarPoint(index, categories.length, 100, radius, centerX, centerY);
-    const labelPoint = getRadarPoint(index, categories.length, 100, radius + 62, centerX, centerY);
+    const labelPoint = getRadarPoint(index, categories.length, 100, labelRadius, centerX, centerY);
     const anchor = getLabelAnchor(labelPoint.x, centerX);
     return `
       <line x1="${centerX}" y1="${centerY}" x2="${axisPoint.x}" y2="${axisPoint.y}" stroke="#e2e8f0" stroke-width="1.5"/>
-      ${svgLineGroup(splitSvgText(category.label, 15, 2), labelPoint.x, labelPoint.y, 22, `text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#475569"`)}
+      ${svgLineGroup(splitSvgText(category.label, 13, 2), labelPoint.x, labelPoint.y, 30, `text-anchor="${anchor}" font-family="Inter, Arial, sans-serif" font-size="25" font-weight="900" fill="#475569"`)}
     `;
   }).join("");
   const markers = categories.map((category, index) => {
     const previousPoint = getRadarPoint(index, categories.length, category.valueA, radius, centerX, centerY);
     const currentPoint = getRadarPoint(index, categories.length, category.valueB, radius, centerX, centerY);
     return `
-      <circle cx="${previousPoint.x}" cy="${previousPoint.y}" r="5" fill="#ffffff" stroke="#64748b" stroke-width="3"/>
-      <circle cx="${currentPoint.x}" cy="${currentPoint.y}" r="6.5" fill="#1e94d2" stroke="#ffffff" stroke-width="2"/>
+      <circle cx="${previousPoint.x}" cy="${previousPoint.y}" r="6" fill="#ffffff" stroke="#64748b" stroke-width="3.5"/>
+      <circle cx="${currentPoint.x}" cy="${currentPoint.y}" r="8" fill="#1e94d2" stroke="#ffffff" stroke-width="2.5"/>
     `;
   }).join("");
 
   return `
     ${ringPolygons}
     ${axes}
-    <polygon points="${pointsFor("valueA")}" fill="#64748b" fill-opacity="0.03" stroke="#64748b" stroke-width="3" stroke-dasharray="9 8" stroke-linejoin="round"/>
-    <polygon points="${pointsFor("valueB")}" fill="#1e94d2" fill-opacity="0.11" stroke="#1e94d2" stroke-width="5" stroke-linejoin="round"/>
+    <polygon points="${pointsFor("valueA")}" fill="#64748b" fill-opacity="0.03" stroke="#64748b" stroke-width="4" stroke-dasharray="10 9" stroke-linejoin="round"/>
+    <polygon points="${pointsFor("valueB")}" fill="#1e94d2" fill-opacity="0.12" stroke="#1e94d2" stroke-width="7" stroke-linejoin="round"/>
     ${markers}
   `;
 }
@@ -2368,34 +2368,34 @@ function svgShapeCategoryBar(category: OverlayCategoryComparisonDatum, x: number
   const changeWidth = previous !== null && current !== null ? (width * Math.abs(current - previous)) / 100 : 0;
   const markerPercent = getShapeBarMarkerPercent(previous);
   const markerX = markerPercent !== null ? x + (width * markerPercent) / 100 : x;
-  const markerPillWidth = 138;
+  const markerPillWidth = 146;
   const markerPillX = markerPercent !== null && markerPercent >= 92 ? markerX - markerPillWidth : markerPercent !== null && markerPercent <= 8 ? markerX : markerX - markerPillWidth / 2;
   const markerTextX = markerPillX + markerPillWidth / 2;
-  const cardHeight = 140;
-  const barY = y + 116;
-  const barHeight = 14;
+  const cardHeight = 148;
+  const barY = y + 122;
+  const barHeight = 18;
   const previousSegment = previous !== null
-    ? `<rect x="${x}" y="${barY}" width="${previousWidth}" height="${barHeight}" rx="7" fill="#d8eef9"/><rect x="${x}" y="${barY}" width="${previousWidth}" height="${barHeight}" rx="7" fill="url(#shape-bar-hatch)"/>`
+    ? `<rect x="${x}" y="${barY}" width="${previousWidth}" height="${barHeight}" rx="8" fill="#d8eef9"/><rect x="${x}" y="${barY}" width="${previousWidth}" height="${barHeight}" rx="8" fill="url(#shape-bar-hatch)"/>`
     : "";
   const fillSegments = previous !== null && current !== null && current > previous
-    ? `${previousSegment}${svgRightRoundedRect(x + changeStart, barY, changeWidth, barHeight, 7, "#1e94d2")}`
+    ? `${previousSegment}${svgRightRoundedRect(x + changeStart, barY, changeWidth, barHeight, 8, "#1e94d2")}`
     : previous !== null && current !== null && current < previous
-      ? `${previousSegment}<rect x="${x}" y="${barY}" width="${currentWidth}" height="${barHeight}" rx="7" fill="#1e94d2"/>${svgRightRoundedRect(x + changeStart, barY, changeWidth, barHeight, 7, "#fb923c", 'opacity="0.78"')}`
-      : previousSegment || `<rect x="${x}" y="${barY}" width="${currentWidth}" height="${barHeight}" rx="7" fill="#1e94d2"/>`;
+      ? `${previousSegment}<rect x="${x}" y="${barY}" width="${currentWidth}" height="${barHeight}" rx="8" fill="#1e94d2"/>${svgRightRoundedRect(x + changeStart, barY, changeWidth, barHeight, 8, "#fb923c", 'opacity="0.78"')}`
+      : previousSegment || `<rect x="${x}" y="${barY}" width="${currentWidth}" height="${barHeight}" rx="8" fill="#1e94d2"/>`;
   const colors = progressToneColors(getCategoryChangeTone(category.change));
 
   return `
-    <rect x="${x}" y="${y}" width="${width + 180}" height="${cardHeight}" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
-    <text x="${x + 18}" y="${y + 30}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b" letter-spacing="1">${escapeSvgText(category.label.toUpperCase())}</text>
-    <text x="${x + 18}" y="${y + 56}" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#020617">${formatScoreValue(category.valueA)} → ${formatScoreValue(category.valueB)}</text>
-    <text x="${x + 18}" y="${y + 82}" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#64748b">Change A → B:</text>
-    <rect x="${x + 164}" y="${y + 62}" width="54" height="26" rx="13" fill="${colors.fill}"/>
-    <text x="${x + 191}" y="${y + 81}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="900" fill="${colors.text}">${formatCategoryChange(category.change)}</text>
-    <text x="${x + width + 142}" y="${y + 48}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="38" font-weight="900" fill="#020617">${formatScoreValue(category.valueB)}</text>
-    <text x="${x + width + 142}" y="${y + 70}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="900" fill="#94a3b8" letter-spacing="1">CURRENT</text>
-    <rect x="${x}" y="${barY}" width="${width}" height="${barHeight}" rx="7" fill="#e5e7eb"/>
+    <rect x="${x}" y="${y}" width="${width + 178}" height="${cardHeight}" rx="20" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+    <text x="${x + 20}" y="${y + 36}" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="1">${escapeSvgText(category.label.toUpperCase())}</text>
+    <text x="${x + 20}" y="${y + 76}" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="900" fill="#020617">${formatScoreValue(category.valueA)} → ${formatScoreValue(category.valueB)}</text>
+    <text x="${x + 20}" y="${y + 106}" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#64748b">Change A → B:</text>
+    <rect x="${x + 178}" y="${y + 80}" width="70" height="34" rx="17" fill="${colors.fill}"/>
+    <text x="${x + 213}" y="${y + 104}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="${colors.text}">${formatCategoryChange(category.change)}</text>
+    <text x="${x + width + 142}" y="${y + 58}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="52" font-weight="900" fill="#020617">${formatScoreValue(category.valueB)}</text>
+    <text x="${x + width + 142}" y="${y + 88}" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#94a3b8" letter-spacing="1">CURRENT</text>
+    <rect x="${x}" y="${barY}" width="${width}" height="${barHeight}" rx="8" fill="#e5e7eb"/>
     ${fillSegments}
-    ${previous !== null ? `<rect x="${markerPillX}" y="${y + 88}" width="${markerPillWidth}" height="24" rx="12" fill="#f1f5f9"/><text x="${markerTextX}" y="${y + 105}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="900" fill="#475569">Previous: ${formatScoreValue(category.valueA)}</text><line x1="${markerX}" y1="${y + 110}" x2="${markerX}" y2="${y + 138}" stroke="#0f4f78" stroke-width="4" stroke-linecap="round"/>` : ""}
+    ${previous !== null ? `<rect x="${markerPillX}" y="${y + 99}" width="${markerPillWidth}" height="26" rx="13" fill="#f1f5f9"/><text x="${markerTextX}" y="${y + 118}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="14" font-weight="900" fill="#475569">Previous: ${formatScoreValue(category.valueA)}</text><line x1="${markerX}" y1="${y + 116}" x2="${markerX}" y2="${y + 144}" stroke="#0f4f78" stroke-width="5" stroke-linecap="round"/>` : ""}
   `;
 }
 
@@ -2410,20 +2410,21 @@ function buildShapeStorySvg(athlete: AthleteProfileRecord, reportA: SavedReport,
   const metrics = getTopShapeMetricChanges(reportA, reportB, 3);
   const overallChange = calculateOverlayChange(reportA.overall, reportB.overall);
   const nameLines = splitSvgText(athlete.name || "Athlete Name", 18, 2);
+  const headerDateY = nameLines.length > 1 ? 268 : 255;
   const takeawayLines = splitSvgText(getProfileOverlayStoryTakeaway(athlete, reportA, reportB), 58, 2);
   const overallColors = progressToneColors(getCategoryChangeTone(overallChange));
-  const categoryCards = categories.map((category, index) => svgShapeCategoryBar(category, 92, 816 + index * 148, 680)).join("");
+  const categoryCards = categories.map((category, index) => svgShapeCategoryBar(category, 72, 930 + index * 158, 728)).join("");
   const metricRows = metrics.map((metric, index) => {
-    const y = 1488 + index * 56;
+    const y = 1660 + index * 54;
     const colors = progressToneColors(metric.tone);
-    const valueA = isFiniteNumber(metric.valueA) ? metric.valueA.toFixed(metric.decimals) : "—";
+    const valueA = formatOverlayMetricValue(metric.valueA, metric);
     const valueB = formatOverlayMetricValue(metric.valueB, metric);
     return `
-      <rect x="92" y="${y - 36}" width="896" height="50" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
-      <text x="120" y="${y - 14}" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#020617">${escapeSvgText(metric.label)}</text>
-      <text x="120" y="${y + 8}" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="800" fill="#64748b">${escapeSvgText(`${valueA} → ${valueB}`)}</text>
-      <rect x="754" y="${y - 24}" width="210" height="28" rx="14" fill="${colors.fill}"/>
-      <text x="859" y="${y - 4}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="900" fill="${colors.text}">${escapeSvgText(metric.changeLabel)}</text>
+      <rect x="92" y="${y - 36}" width="896" height="52" rx="16" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+      <text x="120" y="${y - 13}" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#020617">${escapeSvgText(metric.label)}</text>
+      <text x="120" y="${y + 11}" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="800" fill="#64748b">${escapeSvgText(`${valueA} → ${valueB}`)}</text>
+      <rect x="734" y="${y - 26}" width="230" height="32" rx="16" fill="${colors.fill}"/>
+      <text x="849" y="${y - 4}" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="${colors.text}">${escapeSvgText(metric.changeLabel)}</text>
     `;
   }).join("");
 
@@ -2435,36 +2436,36 @@ function buildShapeStorySvg(athlete: AthleteProfileRecord, reportA: SavedReport,
         </pattern>
       </defs>
       <rect width="1080" height="1920" fill="#f8fafc"/>
-      <rect x="42" y="38" width="996" height="238" rx="38" fill="#231f20"/>
-      ${svgBrandWordmark(76, 76, 110, 38, wordmarkHref)}
-      <text x="214" y="106" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#ffffff" opacity="0.58" letter-spacing="7">PROFILE SHAPE COMPARISON</text>
-      <rect x="775" y="88" width="226" height="104" rx="26" fill="#ffffff"/>
-      <text x="888" y="126" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#64748b">OVERALL</text>
-      <text x="888" y="172" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="900" fill="#020617">${formatScoreValue(reportA.overall)} → ${formatScoreValue(reportB.overall)}</text>
-      <rect x="800" y="206" width="176" height="32" rx="16" fill="${overallColors.fill}"/>
-      <text x="888" y="228" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="900" fill="${overallColors.text}">Change A → B: ${formatCategoryChange(overallChange)}</text>
-      ${svgLineGroup(nameLines, 76, 180, 54, 'font-family="Inter, Arial, sans-serif" font-size="58" font-weight="900" fill="#ffffff"')}
-      <text x="76" y="244" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff" opacity="0.62">Previous ${escapeSvgText(formatDate(reportA.date))} · Current ${escapeSvgText(formatDate(reportB.date))}</text>
+      <rect x="42" y="38" width="996" height="248" rx="38" fill="#231f20"/>
+      ${svgBrandWordmark(76, 76, 118, 40, wordmarkHref)}
+      <text x="220" y="106" font-family="Inter, Arial, sans-serif" font-size="21" font-weight="900" fill="#ffffff" opacity="0.58" letter-spacing="7">PROFILE SHAPE COMPARISON</text>
+      <rect x="760" y="86" width="242" height="122" rx="28" fill="#ffffff"/>
+      <text x="881" y="126" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b">OVERALL</text>
+      <text x="881" y="176" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="52" font-weight="900" fill="#020617">${formatScoreValue(reportA.overall)} → ${formatScoreValue(reportB.overall)}</text>
+      <rect x="790" y="224" width="182" height="34" rx="17" fill="${overallColors.fill}"/>
+      <text x="881" y="247" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="900" fill="${overallColors.text}">Change A → B: ${formatCategoryChange(overallChange)}</text>
+      ${svgLineGroup(nameLines, 76, 186, 56, 'font-family="Inter, Arial, sans-serif" font-size="62" font-weight="900" fill="#ffffff"')}
+      <text x="76" y="${headerDateY}" font-family="Inter, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff" opacity="0.64">Previous ${escapeSvgText(formatDate(reportA.date))} → Current ${escapeSvgText(formatDate(reportB.date))}</text>
 
-      <rect x="62" y="316" width="956" height="450" rx="32" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
-      <text x="92" y="372" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="5">PROFILE SHAPE</text>
-      <rect x="92" y="400" width="24" height="4" rx="2" fill="#64748b"/>
-      <text x="128" y="407" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#64748b">Previous Report</text>
-      <circle cx="104" cy="438" r="6" fill="#1e94d2"/>
-      <text x="128" y="444" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="900" fill="#167bb0">Current Report</text>
-      <g>${svgShapeRadar(categories, 540, 548, 136)}</g>
+      <rect x="42" y="316" width="996" height="560" rx="34" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="72" y="374" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">PROFILE SHAPE</text>
+      <rect x="72" y="410" width="32" height="5" rx="2.5" fill="#64748b"/>
+      <text x="118" y="419" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#64748b">Previous Report</text>
+      <circle cx="348" cy="413" r="7" fill="#1e94d2"/>
+      <text x="366" y="420" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#167bb0">Current Report</text>
+      <g>${svgShapeRadar(categories, 540, 604, 220, 260)}</g>
 
-      <text x="92" y="800" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="5">CATEGORY SCORE COMPARISON</text>
+      <text x="72" y="906" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">CATEGORY SCORE COMPARISON</text>
       ${categoryCards}
 
-      <rect x="62" y="1420" width="956" height="212" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
-      <text x="92" y="1468" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900" fill="#64748b" letter-spacing="5">KEY TEST CHANGES</text>
+      <rect x="62" y="1570" width="956" height="216" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="92" y="1610" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="900" fill="#64748b" letter-spacing="5">KEY TEST CHANGES</text>
       ${metricRows}
 
-      <rect x="62" y="1650" width="956" height="138" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
-      <text x="92" y="1694" font-family="Inter, Arial, sans-serif" font-size="19" font-weight="900" fill="#64748b" letter-spacing="4">COACH TAKEAWAY</text>
-      ${svgLineGroup(takeawayLines, 92, 1732, 28, 'font-family="Inter, Arial, sans-serif" font-size="23" font-weight="800" fill="#334155"')}
-      <text x="540" y="1868" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#94a3b8" letter-spacing="2">POWERED BY  <tspan fill="#1e94d2">PEAQ ANALYTICS</tspan></text>
+      <rect x="62" y="1800" width="956" height="86" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="3"/>
+      <text x="92" y="1833" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#64748b" letter-spacing="4">COACH TAKEAWAY</text>
+      ${svgLineGroup(takeawayLines, 92, 1860, 24, 'font-family="Inter, Arial, sans-serif" font-size="21" font-weight="800" fill="#334155"')}
+      <text x="540" y="1906" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="900" fill="#94a3b8" letter-spacing="2">POWERED BY  <tspan fill="#1e94d2">PEAQ ANALYTICS</tspan></text>
     </svg>
   `;
 }
@@ -2490,7 +2491,9 @@ async function renderShapeStoryPngBlob(athlete: AthleteProfileRecord, reportA: S
         reject(new Error("Canvas is unavailable."));
         return;
       }
-      context.drawImage(image, 0, 0);
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(image, 0, 0, 1080, 1920);
       URL.revokeObjectURL(svgUrl);
       canvas.toBlob((blob) => {
         if (!blob) {
