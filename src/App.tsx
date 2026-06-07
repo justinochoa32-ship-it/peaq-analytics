@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import {
   refreshSupabaseSession,
   sendPasswordReset,
@@ -10,6 +10,8 @@ import {
   type SupabaseSession,
   updateCoachPassword,
 } from "./supabaseClient";
+import { peaqAccess, peaqAccessMessages } from "./peaqAccess";
+import { getProgramBuilderUrl } from "./programBuilderHandoff";
 
 type Sex = "Male" | "Female";
 type Direction = "lower" | "higher";
@@ -2663,7 +2665,26 @@ function ShareCardExport({ data, profile, onBack }: { data: AthleteData; profile
   );
 }
 
-function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteData; profile: Profile; onBack: () => void; onShareCard: () => void }) {
+function ProfileToProgramButton({ onClick }: { onClick: () => void }) {
+  const canUseProfileToProgram = peaqAccess.canUseProfileToProgram;
+
+  return (
+    <button
+      className={
+        canUseProfileToProgram
+          ? "rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-[#1678ad]"
+          : "cursor-not-allowed rounded-2xl bg-slate-200 px-5 py-3 text-sm font-black text-slate-500"
+      }
+      disabled={!canUseProfileToProgram}
+      onClick={canUseProfileToProgram ? onClick : undefined}
+      title={canUseProfileToProgram ? undefined : peaqAccessMessages.buildRequired}
+    >
+      {canUseProfileToProgram ? "Build Program from Profile →" : peaqAccessMessages.buildRequired}
+    </button>
+  );
+}
+
+function OnePageReport({ data, profile, onBack, onShareCard, onOpenProgramBuilder }: { data: AthleteData; profile: Profile; onBack: () => void; onShareCard: () => void; onOpenProgramBuilder: () => void }) {
   const athleteMeta = [data.sex, data.sport, data.position, data.height ? `${data.height} in` : null, data.bodyweight ? `${data.bodyweight} lb` : null, data.date].filter(Boolean).join(" • ");
 
   return (
@@ -2686,6 +2707,7 @@ function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteDa
 
       <div className="no-print mx-auto mb-4 flex max-w-7xl flex-wrap gap-3">
         <button onClick={onBack} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Back</button>
+        <ProfileToProgramButton onClick={onOpenProgramBuilder} />
         <button onClick={() => window.print()} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Print / Save PDF</button>
         <button onClick={onShareCard} className="rounded-2xl bg-[#1e94d2] px-5 py-3 text-sm font-black text-white hover:bg-[#1678ad]">Save Story Profile</button>
       </div>
@@ -2778,19 +2800,22 @@ function OnePageReport({ data, profile, onBack, onShareCard }: { data: AthleteDa
 
 function ProgressStoryExport({ athlete, reportA, reportB, onBack }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void }) {
   const fallbackPreviewSrc = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildProgressStorySvg(athlete, reportA, reportB))}`, [athlete, reportA, reportB]);
-  const [previewSrc, setPreviewSrc] = useState(fallbackPreviewSrc);
+  const [previewState, setPreviewState] = useState(() => ({ key: fallbackPreviewSrc, src: fallbackPreviewSrc }));
+  const previewSrc = previewState.key === fallbackPreviewSrc ? previewState.src : fallbackPreviewSrc;
 
   useEffect(() => {
     let isActive = true;
-    setPreviewSrc(fallbackPreviewSrc);
 
     void getSvgWordmarkHref()
       .then((wordmarkHref) => {
-        if (isActive) setPreviewSrc(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildProgressStorySvg(athlete, reportA, reportB, wordmarkHref))}`);
+        if (isActive) {
+          setPreviewState({
+            key: fallbackPreviewSrc,
+            src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildProgressStorySvg(athlete, reportA, reportB, wordmarkHref))}`,
+          });
+        }
       })
-      .catch(() => {
-        if (isActive) setPreviewSrc(fallbackPreviewSrc);
-      });
+      .catch(() => undefined);
 
     return () => {
       isActive = false;
@@ -2815,22 +2840,20 @@ function ProgressStoryExport({ athlete, reportA, reportB, onBack }: { athlete: A
 
 function ShapeStoryExport({ athlete, reportA, reportB, onBack }: { athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport; onBack: () => void }) {
   const fallbackPreviewSrc = useMemo(() => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(buildShapeStorySvg(athlete, reportA, reportB))}`, [athlete, reportA, reportB]);
-  const [previewSrc, setPreviewSrc] = useState(fallbackPreviewSrc);
+  const [previewState, setPreviewState] = useState(() => ({ key: fallbackPreviewSrc, src: fallbackPreviewSrc }));
+  const previewSrc = previewState.key === fallbackPreviewSrc ? previewState.src : fallbackPreviewSrc;
 
   useEffect(() => {
     let isActive = true;
     let objectUrl: string | null = null;
-    setPreviewSrc(fallbackPreviewSrc);
 
     void renderShapeStoryPngBlob(athlete, reportA, reportB)
       .then((blob) => {
         objectUrl = URL.createObjectURL(blob);
-        if (isActive) setPreviewSrc(objectUrl);
+        if (isActive) setPreviewState({ key: fallbackPreviewSrc, src: objectUrl });
         else URL.revokeObjectURL(objectUrl);
       })
-      .catch(() => {
-        if (isActive) setPreviewSrc(fallbackPreviewSrc);
-      });
+      .catch(() => undefined);
 
     return () => {
       isActive = false;
@@ -3753,6 +3776,7 @@ function ReportBuilder({
   onBack,
   onPrintReport,
   onShareCard,
+  onOpenProgramBuilder,
   mode = "new",
 }: {
   data: AthleteData;
@@ -3761,6 +3785,7 @@ function ReportBuilder({
   onBack: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
   onShareCard: (data: AthleteData, profile: Profile) => void;
+  onOpenProgramBuilder: (data: AthleteData, profile: Profile) => void;
   mode?: "new" | "correction";
 }) {
   const profile = useMemo(() => buildProfile(data), [data]);
@@ -3799,7 +3824,16 @@ function ReportBuilder({
           </div>
         </section>
 
-        <DashboardReport data={data} profile={profile} onSave={() => onSave(data, profile)} onBack={onBack} onPrintReport={() => onPrintReport(data, profile)} onShareCard={() => onShareCard(data, profile)} saveLabel={isCorrection ? "Save Correction" : "Save Report"} />
+        <DashboardReport
+          data={data}
+          profile={profile}
+          onSave={() => onSave(data, profile)}
+          onBack={onBack}
+          onPrintReport={() => onPrintReport(data, profile)}
+          onShareCard={() => onShareCard(data, profile)}
+          saveLabel={isCorrection ? "Save Correction" : "Save Report"}
+          extraActions={<ProfileToProgramButton onClick={() => onOpenProgramBuilder(data, profile)} />}
+        />
       </div>
     </main>
   );
@@ -4775,16 +4809,14 @@ function ReportComparison({ athlete, reports, onPrintComparison, onShareComparis
 }
 
 function AthleteDetailsPanel({ athlete, onSave }: { athlete: AthleteProfileRecord; onSave: (updates: AthleteProfileForm) => void }) {
+  const athleteForm = useMemo(() => getAthleteProfileForm(athlete), [athlete]);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<AthleteProfileForm>(() => getAthleteProfileForm(athlete));
+  const [draftForm, setDraftForm] = useState<AthleteProfileForm>(() => athleteForm);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    if (!editing) setForm(getAthleteProfileForm(athlete));
-  }, [athlete, editing]);
+  const form = editing ? draftForm : athleteForm;
 
   function update<K extends keyof AthleteProfileForm>(key: K, value: AthleteProfileForm[K]): void {
-    setForm((current) => ({ ...current, [key]: value }));
+    setDraftForm((current) => ({ ...current, [key]: value }));
   }
 
   function save(): void {
@@ -4815,7 +4847,7 @@ function AthleteDetailsPanel({ athlete, onSave }: { athlete: AthleteProfileRecor
   }
 
   function cancel(): void {
-    setForm(getAthleteProfileForm(athlete));
+    setDraftForm(athleteForm);
     setEditing(false);
     setMessage("");
   }
@@ -4846,7 +4878,7 @@ function AthleteDetailsPanel({ athlete, onSave }: { athlete: AthleteProfileRecor
             <button onClick={cancel} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200">Cancel</button>
           </div>
         ) : (
-          <button onClick={() => { setEditing(true); setMessage(""); }} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Edit Details</button>
+          <button onClick={() => { setDraftForm(athleteForm); setEditing(true); setMessage(""); }} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Edit Details</button>
         )}
       </div>
 
@@ -5022,6 +5054,7 @@ function SavedReportView({
   onCorrect,
   onPrintReport,
   onShareCard,
+  onOpenProgramBuilder,
 }: {
   athlete: AthleteProfileRecord;
   report: SavedReport;
@@ -5029,6 +5062,7 @@ function SavedReportView({
   onCorrect: () => void;
   onPrintReport: (data: AthleteData, profile: Profile) => void;
   onShareCard: (data: AthleteData, profile: Profile) => void;
+  onOpenProgramBuilder: (data: AthleteData, profile: Profile) => void;
 }) {
   const displayData = getReportDisplayData(athlete, report);
   const displayProfile = getReportDisplayProfile(athlete, report);
@@ -5047,7 +5081,12 @@ function SavedReportView({
           onPrintReport={() => onPrintReport(displayData, displayProfile)}
           onShareCard={() => onShareCard(displayData, displayProfile)}
           auditNote={getCorrectionNote(report)}
-          extraActions={<button onClick={onCorrect} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-slate-800">Correct Report</button>}
+          extraActions={(
+            <>
+              <ProfileToProgramButton onClick={() => onOpenProgramBuilder(displayData, displayProfile)} />
+              <button onClick={onCorrect} className="rounded-2xl bg-slate-100 px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-200">Correct Report</button>
+            </>
+          )}
         />
         <CorrectionAuditTrail report={report} />
       </div>
@@ -5213,16 +5252,14 @@ function PasswordResetCard({
 }
 
 function CoachProfilePage({ coach, onBack, onSave }: { coach: CoachWorkspace; onBack: () => void; onSave: (updates: CoachProfileForm) => void }) {
+  const coachForm = useMemo(() => getCoachProfileForm(coach), [coach]);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<CoachProfileForm>(() => getCoachProfileForm(coach));
+  const [draftForm, setDraftForm] = useState<CoachProfileForm>(() => coachForm);
   const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    if (!editing) setForm(getCoachProfileForm(coach));
-  }, [coach, editing]);
+  const form = editing ? draftForm : coachForm;
 
   function update<K extends keyof CoachProfileForm>(key: K, value: CoachProfileForm[K]): void {
-    setForm((current) => ({ ...current, [key]: value }));
+    setDraftForm((current) => ({ ...current, [key]: value }));
   }
 
   function save(): void {
@@ -5251,7 +5288,7 @@ function CoachProfilePage({ coach, onBack, onSave }: { coach: CoachWorkspace; on
   }
 
   function cancel(): void {
-    setForm(getCoachProfileForm(coach));
+    setDraftForm(coachForm);
     setEditing(false);
     setMessage("");
   }
@@ -5287,7 +5324,7 @@ function CoachProfilePage({ coach, onBack, onSave }: { coach: CoachWorkspace; on
                 <button onClick={cancel} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200">Cancel</button>
               </div>
             ) : (
-              <button onClick={() => { setEditing(true); setMessage(""); }} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Edit Profile</button>
+              <button onClick={() => { setDraftForm(coachForm); setEditing(true); setMessage(""); }} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800">Edit Profile</button>
             )}
           </div>
 
@@ -5637,12 +5674,15 @@ function Workspace({
 }
 
 export default function AthleteProfilingMVP() {
-  const [coach, setCoach] = useState<CoachWorkspace | null>(() => supabaseConfig.isConfigured ? null : loadStoredCoach());
-  const [authSession, setAuthSession] = useState<SupabaseSession | null>(() => supabaseConfig.isConfigured ? loadStoredSupabaseSession() : null);
+  const initialPasswordRecovery = useMemo(() => getPasswordRecoverySessionFromUrl(), []);
+  const initialCoach = useMemo(() => initialPasswordRecovery || supabaseConfig.isConfigured ? null : loadStoredCoach(), [initialPasswordRecovery]);
+  const initialView = useMemo<ViewName>(() => initialPasswordRecovery || !initialCoach ? "auth" : "workspace", [initialCoach, initialPasswordRecovery]);
+  const [coach, setCoach] = useState<CoachWorkspace | null>(() => initialCoach);
+  const [authSession, setAuthSession] = useState<SupabaseSession | null>(() => initialPasswordRecovery ? null : supabaseConfig.isConfigured ? loadStoredSupabaseSession() : null);
   const [cloudStatus, setCloudStatus] = useState(supabaseConfig.isConfigured ? "Cloud accounts enabled." : "");
-  const [authMessage, setAuthMessage] = useState(supabaseConfig.isConfigured ? "Sign in or create an account to use your protected beta workspace." : "");
+  const [authMessage, setAuthMessage] = useState(initialPasswordRecovery ? "Enter a new password to finish resetting your PEAQ account." : supabaseConfig.isConfigured ? "Sign in or create an account to use your protected beta workspace." : "");
   const [cloudLoadedForUser, setCloudLoadedForUser] = useState<string | null>(null);
-  const [view, setView] = useState<ViewName>("auth");
+  const [view, setView] = useState<ViewName>(() => initialView);
   const [builderData, setBuilderData] = useState<AthleteData>(blankAthlete);
   const [builderAthleteId, setBuilderAthleteId] = useState<string | null>(null);
   const [builderReportId, setBuilderReportId] = useState<string | null>(null);
@@ -5653,9 +5693,9 @@ export default function AthleteProfilingMVP() {
   const [progressPrint, setProgressPrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
   const [shapePrint, setShapePrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
   const [shareCardReturn, setShareCardReturn] = useState<AppHistoryState>({ view: "workspace", selectedAthleteId: null, selectedReportId: null });
-  const [passwordRecovery, setPasswordRecovery] = useState<PasswordRecoverySession | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState<PasswordRecoverySession | null>(() => initialPasswordRecovery);
 
-  function navigate(nextView: ViewName, options: { athleteId?: string | null; reportId?: string | null; replace?: boolean } = {}): void {
+  const navigate = useCallback((nextView: ViewName, options: { athleteId?: string | null; reportId?: string | null; replace?: boolean } = {}): void => {
     const hasAthleteId = Object.prototype.hasOwnProperty.call(options, "athleteId");
     const hasReportId = Object.prototype.hasOwnProperty.call(options, "reportId");
     const nextAthleteId = hasAthleteId ? options.athleteId ?? null : selectedAthleteId;
@@ -5672,71 +5712,9 @@ export default function AthleteProfilingMVP() {
       return;
     }
     window.history.pushState(nextState, "", window.location.pathname);
-  }
+  }, [selectedAthleteId, selectedReportId]);
 
-  useEffect(() => {
-    saveStoredCoach(coach);
-  }, [coach]);
-
-  useEffect(() => {
-    saveStoredSupabaseSession(authSession);
-  }, [authSession]);
-
-  useEffect(() => {
-    const recoverySession = getPasswordRecoverySessionFromUrl();
-    if (!recoverySession) return;
-
-    setPasswordRecovery(recoverySession);
-    setAuthSession(null);
-    setCoach(null);
-    setCloudLoadedForUser(null);
-    setView("auth");
-    setAuthMessage("Enter a new password to finish resetting your PEAQ account.");
-    clearPasswordRecoveryUrl();
-  }, []);
-
-  useEffect(() => {
-    if (!supabaseConfig.isConfigured || !authSession || cloudLoadedForUser === authSession.user.id) return;
-    if (authSession.expiresAt && authSession.expiresAt < Date.now() + 60_000) {
-      void refreshSupabaseSession(authSession.refreshToken)
-        .then((session) => setAuthSession(session))
-        .catch(() => {
-          setAuthSession(null);
-          setAuthMessage("Session expired. Please sign in again.");
-        });
-      return;
-    }
-    void loadCloudWorkspace(authSession, "Loaded cloud workspace.");
-  }, [authSession, cloudLoadedForUser]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const initialState = window.history.state as Partial<AppHistoryState> | null;
-    if (!initialState?.view) {
-      const initialView: ViewName = coach ? "workspace" : "auth";
-      window.history.replaceState({ view: initialView, selectedAthleteId: null, selectedReportId: null }, "", window.location.pathname);
-      if (coach && view === "auth") setView("workspace");
-    }
-
-    function handlePopState(event: PopStateEvent): void {
-      const state = event.state as AppHistoryState | null;
-      if (!state?.view) {
-        setSelectedAthleteId(null);
-        setSelectedReportId(null);
-        setView(coach ? "workspace" : "auth");
-        return;
-      }
-      setSelectedAthleteId(state.selectedAthleteId ?? null);
-      setSelectedReportId(state.selectedReportId ?? null);
-      setView(state.view);
-    }
-
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [coach, view]);
-
-  async function loadCloudWorkspace(session: SupabaseSession, successMessage: string): Promise<void> {
+  const loadCloudWorkspace = useCallback(async (session: SupabaseSession, successMessage: string): Promise<void> => {
     setCloudStatus("Loading cloud workspace...");
     try {
       const cloudCoach = await loadCoachFromSupabase(session);
@@ -5763,7 +5741,60 @@ export default function AthleteProfilingMVP() {
       setAuthSession(null);
       setCoach(null);
     }
-  }
+  }, [navigate]);
+
+  useEffect(() => {
+    saveStoredCoach(coach);
+  }, [coach]);
+
+  useEffect(() => {
+    saveStoredSupabaseSession(authSession);
+  }, [authSession]);
+
+  useEffect(() => {
+    if (!initialPasswordRecovery) return;
+    clearPasswordRecoveryUrl();
+  }, [initialPasswordRecovery]);
+
+  useEffect(() => {
+    if (!supabaseConfig.isConfigured || !authSession || cloudLoadedForUser === authSession.user.id) return;
+    if (authSession.expiresAt && authSession.expiresAt < Date.now() + 60_000) {
+      void refreshSupabaseSession(authSession.refreshToken)
+        .then((session) => setAuthSession(session))
+        .catch(() => {
+          setAuthSession(null);
+          setAuthMessage("Session expired. Please sign in again.");
+      });
+      return;
+    }
+    void Promise.resolve().then(() => loadCloudWorkspace(authSession, "Loaded cloud workspace."));
+  }, [authSession, cloudLoadedForUser, loadCloudWorkspace]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const initialState = window.history.state as Partial<AppHistoryState> | null;
+    if (!initialState?.view) {
+      const initialView: ViewName = coach ? "workspace" : "auth";
+      window.history.replaceState({ view: initialView, selectedAthleteId: null, selectedReportId: null }, "", window.location.pathname);
+    }
+
+    function handlePopState(event: PopStateEvent): void {
+      const state = event.state as AppHistoryState | null;
+      if (!state?.view) {
+        setSelectedAthleteId(null);
+        setSelectedReportId(null);
+        setView(coach ? "workspace" : "auth");
+        return;
+      }
+      setSelectedAthleteId(state.selectedAthleteId ?? null);
+      setSelectedReportId(state.selectedReportId ?? null);
+      setView(state.view);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [coach]);
 
   function persistCoachToCloud(nextCoach: CoachWorkspace | null): void {
     if (!nextCoach || !authSession || !supabaseConfig.isConfigured) return;
@@ -5906,6 +5937,23 @@ export default function AthleteProfilingMVP() {
     setPrintData(data);
     setPrintProfile(profile);
     navigate("print");
+  }
+
+  function openProgramBuilderFromProfile(data: AthleteData, profile: Profile): void {
+    if (!peaqAccess.canUseProfileToProgram) return;
+
+    const programBuilderUrl = getProgramBuilderUrl({
+      athleteName: data.name || "",
+      archetype: profile.archetype,
+      status: profile.status,
+      primaryLimiter: profile.primaryLimiter || "",
+      secondaryLimiter: profile.secondaryLimiter || "",
+    });
+    const programBuilderWindow = window.open(programBuilderUrl, "_blank", "noopener,noreferrer");
+
+    if (!programBuilderWindow) {
+      window.location.assign(programBuilderUrl);
+    }
   }
 
   function openShareCard(data: AthleteData, profile: Profile, returnState: AppHistoryState = { view, selectedAthleteId, selectedReportId }): void {
@@ -6108,13 +6156,13 @@ export default function AthleteProfilingMVP() {
   if (view === "coach-profile") return <CoachProfilePage coach={coach} onBack={goWorkspace} onSave={updateCoachProfile} />;
   if (view === "resources") return <CoachResources onBack={goWorkspace} />;
   if (view === "guide") return <ScoringGuide onBack={goWorkspace} />;
-  if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} onShareCard={() => openShareCard(printData, printProfile, { view: "print", selectedAthleteId, selectedReportId })} />;
+  if (view === "print" && printData && printProfile) return <OnePageReport data={printData} profile={printProfile} onBack={goWorkspace} onShareCard={() => openShareCard(printData, printProfile, { view: "print", selectedAthleteId, selectedReportId })} onOpenProgramBuilder={() => openProgramBuilderFromProfile(printData, printProfile)} />;
   if (view === "share-card" && printData && printProfile) return <ShareCardExport data={printData} profile={printProfile} onBack={returnFromShareCard} />;
   if (view === "progress-print" && progressPrint) return <ProgressReport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} onShareCard={() => openProgressStory(progressPrint.athlete, progressPrint.reportA, progressPrint.reportB)} />;
   if (view === "progress-share-card" && progressPrint) return <ProgressStoryExport athlete={progressPrint.athlete} reportA={progressPrint.reportA} reportB={progressPrint.reportB} onBack={() => openAthlete(progressPrint.athlete.id)} />;
   if (view === "shape-print" && shapePrint) return <ShapeComparisonReport athlete={shapePrint.athlete} reportA={shapePrint.reportA} reportB={shapePrint.reportB} onBack={() => openAthlete(shapePrint.athlete.id)} onShareCard={() => openShapeComparisonStory(shapePrint.athlete, shapePrint.reportA, shapePrint.reportB)} />;
   if (view === "shape-share-card" && shapePrint) return <ShapeStoryExport athlete={shapePrint.athlete} reportA={shapePrint.reportA} reportB={shapePrint.reportB} onBack={() => openAthlete(shapePrint.athlete.id)} />;
-  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => builderAthleteId && !builderReportId ? openAthlete(builderAthleteId) : goWorkspace()} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "builder", selectedAthleteId: builderAthleteId, selectedReportId: builderReportId })} mode={builderReportId ? "correction" : "new"} />;
+  if (view === "builder") return <ReportBuilder data={builderData} setData={setBuilderData} onSave={saveReport} onBack={() => builderAthleteId && !builderReportId ? openAthlete(builderAthleteId) : goWorkspace()} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "builder", selectedAthleteId: builderAthleteId, selectedReportId: builderReportId })} onOpenProgramBuilder={openProgramBuilderFromProfile} mode={builderReportId ? "correction" : "new"} />;
   if (view === "csv") return <CsvImport coach={coach} onBack={goWorkspace} onView={(data) => { setBuilderAthleteId(null); setBuilderReportId(null); setBuilderData(data); navigate("builder", { athleteId: null, reportId: null }); }} onSaveRows={saveImportedRows} />;
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
@@ -6125,7 +6173,7 @@ export default function AthleteProfilingMVP() {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     const report = athlete?.reports.find((item) => item.id === selectedReportId);
     if (!athlete || !report) return renderWorkspace(coach);
-    return <SavedReportView athlete={athlete} report={report} onBack={() => openAthlete(athlete.id)} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(getReportDisplayData(athlete, report)); navigate("builder", { athleteId: athlete.id, reportId: report.id }); }} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "saved-report", selectedAthleteId: athlete.id, selectedReportId: report.id })} />;
+    return <SavedReportView athlete={athlete} report={report} onBack={() => openAthlete(athlete.id)} onCorrect={() => { setBuilderAthleteId(athlete.id); setBuilderReportId(report.id); setBuilderData(getReportDisplayData(athlete, report)); navigate("builder", { athleteId: athlete.id, reportId: report.id }); }} onPrintReport={openPrintReport} onShareCard={(data, profile) => openShareCard(data, profile, { view: "saved-report", selectedAthleteId: athlete.id, selectedReportId: report.id })} onOpenProgramBuilder={openProgramBuilderFromProfile} />;
   }
   return renderWorkspace(coach);
 }
