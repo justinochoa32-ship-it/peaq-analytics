@@ -11,7 +11,15 @@ import {
   updateCoachPassword,
 } from "./supabaseClient";
 import { peaqAccess, peaqAccessMessages } from "./peaqAccess";
-import { getProgramBuilderUrl } from "./programBuilderHandoff";
+import { getProgramBuilderUrl, programBuilderBaseUrl } from "./programBuilderHandoff";
+import {
+  formatProgramDate,
+  normalizeSavedProgram,
+  normalizeSavedPrograms,
+  savedProgramMessageType,
+  upsertSavedProgram,
+  type SavedProgram,
+} from "./savedPrograms";
 
 type Sex = "Male" | "Female";
 type Direction = "lower" | "higher";
@@ -139,6 +147,7 @@ interface AthleteProfileRecord {
   notes?: string;
   archivedAt: string | null;
   reports: SavedReport[];
+  programs: SavedProgram[];
 }
 
 interface CoachWorkspace {
@@ -341,6 +350,26 @@ interface CloudReportRow {
   corrected_at: string | null;
   correction_count: number | null;
   correction_history: CorrectionSnapshot[] | null;
+}
+
+interface CloudProgramRow {
+  id: string;
+  client_id: string | null;
+  athlete_id: string;
+  source_report_client_id: string | null;
+  source_profile_bucket: string | null;
+  source_primary_limiter: string | null;
+  source_secondary_limiter: string | null;
+  program_name: string | null;
+  weekly_structure: string | null;
+  status: string | null;
+  created_from: string | null;
+  program_json: Record<string, unknown> | null;
+  notes: string | null;
+  assigned_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 const blankAthlete: AthleteData = {
@@ -711,6 +740,11 @@ function normalizeAthleteProfile(athlete: Partial<AthleteProfileRecord>, index: 
     notes: cleanText(athlete.notes),
     archivedAt: athlete.archivedAt || null,
     reports,
+    programs: normalizeSavedPrograms(athlete.programs).map((program) => ({
+      ...program,
+      athleteId: program.athleteId || id,
+      athleteName: program.athleteName || getAthleteDisplayName({ ...athlete, name: athlete.name || latestData.name }),
+    })),
   };
 }
 
@@ -841,6 +875,7 @@ function buildAthleteBase(data: AthleteData, athleteId: string, existingAthlete:
     notes: existingAthlete?.notes || "",
     archivedAt: existingAthlete?.archivedAt || null,
     reports: [],
+    programs: existingAthlete?.programs || [],
   };
 }
 
@@ -3943,6 +3978,32 @@ function correctSavedReport(current: CoachWorkspace | null, athleteId: string, r
   };
 }
 
+function upsertAthleteSavedProgram(current: CoachWorkspace | null, savedProgram: SavedProgram): CoachWorkspace | null {
+  if (!current) return current;
+  const normalizedCoach = normalizeCoachWorkspace(current);
+  if (!normalizedCoach) return current;
+
+  const targetAthlete = normalizedCoach.athletes.find((athlete) => athlete.id === savedProgram.athleteId)
+    || normalizedCoach.athletes.find((athlete) => athlete.name.toLowerCase() === savedProgram.athleteName.toLowerCase());
+
+  if (!targetAthlete) return normalizedCoach;
+
+  const normalizedProgram = normalizeSavedProgram({
+    ...savedProgram,
+    athleteId: targetAthlete.id,
+    athleteName: targetAthlete.name,
+  });
+
+  if (!normalizedProgram) return normalizedCoach;
+
+  return {
+    ...normalizedCoach,
+    athletes: normalizedCoach.athletes.map((athlete) => athlete.id === targetAthlete.id
+      ? { ...athlete, programs: upsertSavedProgram(athlete.programs, normalizedProgram) }
+      : athlete),
+  };
+}
+
 function isProfile(value: unknown): value is Profile {
   return Boolean(value && typeof value === "object" && "bucketItems" in value && "scoreList" in value);
 }
@@ -3985,8 +4046,46 @@ function buildReportFromCloud(row: CloudReportRow): SavedReport {
   };
 }
 
+function buildProgramFromCloud(row: CloudProgramRow, athlete: Pick<AthleteProfileRecord, "id" | "name"> | undefined): SavedProgram | null {
+  return normalizeSavedProgram({
+    id: row.client_id || row.id,
+    athleteId: athlete?.id,
+    athleteName: athlete?.name || "",
+    sourceReportId: row.source_report_client_id || undefined,
+    sourceProfileBucket: row.source_profile_bucket || undefined,
+    sourcePrimaryLimiter: row.source_primary_limiter || undefined,
+    sourceSecondaryLimiter: row.source_secondary_limiter || undefined,
+    programName: row.program_name || undefined,
+    weeklyStructure: row.weekly_structure || undefined,
+    status: row.status || undefined,
+    createdFrom: row.created_from || undefined,
+    programJson: row.program_json || undefined,
+    notes: row.notes || undefined,
+    assignedAt: row.assigned_at || undefined,
+    completedAt: row.completed_at || undefined,
+    createdAt: row.created_at || undefined,
+    updatedAt: row.updated_at || undefined,
+  });
+}
+
+function isMissingProgramTableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error || "").toLowerCase();
+  return message.includes("assigned_programs") && (message.includes("does not exist") || message.includes("schema cache"));
+}
+
+async function loadProgramRowsFromSupabase(session: SupabaseSession): Promise<CloudProgramRow[]> {
+  try {
+    return await supabaseFetch<CloudProgramRow[]>("/rest/v1/assigned_programs?select=id,client_id,athlete_id,source_report_client_id,source_profile_bucket,source_primary_limiter,source_secondary_limiter,program_name,weekly_structure,status,created_from,program_json,notes,assigned_at,completed_at,created_at,updated_at&order=updated_at.desc", {
+      accessToken: session.accessToken,
+    });
+  } catch (error) {
+    if (isMissingProgramTableError(error)) return [];
+    throw error;
+  }
+}
+
 async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWorkspace> {
-  const [profileRows, athleteRows, reportRows] = await Promise.all([
+  const [profileRows, athleteRows, reportRows, programRows] = await Promise.all([
     supabaseFetch<CloudProfileRow[]>("/rest/v1/profiles?select=id,email,coach_name,organization,first_name,last_name,display_name,contact_email,role_title,phone,website,location,notes&limit=1", {
       accessToken: session.accessToken,
     }),
@@ -3996,14 +4095,31 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
     supabaseFetch<CloudReportRow[]>("/rest/v1/reports?select=id,client_id,athlete_id,testing_date,raw_inputs,calculated_profile,overall_score,profile_rating,archetype,status,primary_limiter,secondary_limiter,saved_at,corrected_at,correction_count,correction_history&order=testing_date.desc", {
       accessToken: session.accessToken,
     }),
+    loadProgramRowsFromSupabase(session),
   ]);
   const profile = profileRows[0];
   const reportsByAthleteId = new Map<string, SavedReport[]>();
+  const programsByAthleteId = new Map<string, SavedProgram[]>();
 
   reportRows.forEach((row) => {
     const reports = reportsByAthleteId.get(row.athlete_id) || [];
     reports.push(buildReportFromCloud(row));
     reportsByAthleteId.set(row.athlete_id, reports);
+  });
+
+  const athleteByCloudId = new Map(athleteRows.map((row) => [row.id, {
+    id: row.client_id || `athlete-${row.id}`,
+    name: row.name,
+  }]));
+
+  programRows.forEach((row) => {
+    const athlete = athleteByCloudId.get(row.athlete_id);
+    const savedProgram = buildProgramFromCloud(row, athlete);
+    if (!savedProgram) return;
+
+    const programs = programsByAthleteId.get(row.athlete_id) || [];
+    programs.push(savedProgram);
+    programsByAthleteId.set(row.athlete_id, programs);
   });
 
   const athletes: AthleteProfileRecord[] = athleteRows.map((row) => ({
@@ -4025,6 +4141,7 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
     notes: row.notes || "",
     archivedAt: row.archived_at || null,
     reports: (reportsByAthleteId.get(row.id) || []).sort((a, b) => b.date.localeCompare(a.date)),
+    programs: (programsByAthleteId.get(row.id) || []).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
   }));
 
   return normalizeCoachWorkspace({
@@ -4146,14 +4263,53 @@ async function saveCoachToSupabase(coach: CoachWorkspace, session: SupabaseSessi
     }));
   });
 
-  if (!reportRows.length) return;
+  if (reportRows.length) {
+    await supabaseFetch("/rest/v1/reports?on_conflict=coach_id,client_id", {
+      method: "POST",
+      accessToken: session.accessToken,
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(reportRows),
+    });
+  }
 
-  await supabaseFetch("/rest/v1/reports?on_conflict=coach_id,client_id", {
-    method: "POST",
-    accessToken: session.accessToken,
-    headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-    body: JSON.stringify(reportRows),
+  const programRows = normalizedCoach.athletes.flatMap((athlete) => {
+    const cloudAthleteId = athleteIdByClientId.get(athlete.id);
+    if (!cloudAthleteId) return [];
+
+    return athlete.programs.map((program) => ({
+      client_id: program.id,
+      coach_id: session.user.id,
+      athlete_id: cloudAthleteId,
+      source_report_client_id: program.sourceReportId || null,
+      source_profile_bucket: program.sourceProfileBucket || null,
+      source_primary_limiter: program.sourcePrimaryLimiter || null,
+      source_secondary_limiter: program.sourceSecondaryLimiter || null,
+      program_name: program.programName || "Untitled Program",
+      weekly_structure: program.weeklyStructure,
+      status: program.status,
+      created_from: program.createdFrom,
+      program_json: program.programJson,
+      notes: program.notes || null,
+      assigned_at: program.assignedAt || null,
+      completed_at: program.completedAt || null,
+      created_at: program.createdAt,
+      updated_at: program.updatedAt,
+    }));
   });
+
+  if (!programRows.length) return;
+
+  try {
+    await supabaseFetch("/rest/v1/assigned_programs?on_conflict=coach_id,client_id", {
+      method: "POST",
+      accessToken: session.accessToken,
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify(programRows),
+    });
+  } catch (error) {
+    if (isMissingProgramTableError(error)) return;
+    throw error;
+  }
 }
 
 function getLatestReport(athlete: AthleteProfileRecord): SavedReport | undefined {
@@ -4922,6 +5078,82 @@ function AthleteDetailsPanel({ athlete, onSave }: { athlete: AthleteProfileRecor
   );
 }
 
+function ProgramStatusPill({ value }: { value: SavedProgram["status"] }) {
+  const tone = value === "Assigned"
+    ? "bg-[#1e94d2] text-white shadow-sm"
+    : value === "Completed"
+      ? "bg-emerald-100 text-emerald-800"
+      : value === "Archived"
+        ? "bg-slate-200 text-slate-600"
+        : "bg-slate-100 text-slate-600";
+
+  return <span className={`rounded-full px-3 py-1 text-xs font-black ${tone}`}>{value}</span>;
+}
+
+function ProgramHistory({
+  athlete,
+  onOpenProgram,
+  onDuplicateProgram,
+}: {
+  athlete: AthleteProfileRecord;
+  onOpenProgram: (program: SavedProgram) => void;
+  onDuplicateProgram: (program: SavedProgram) => void;
+}) {
+  const programs = athlete.programs || [];
+
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase tracking-wide text-slate-500">Program History</p>
+          <h2 className="text-2xl font-black">Saved Programs</h2>
+        </div>
+        <p className="text-sm font-bold text-slate-500">{programs.length} {programs.length === 1 ? "program" : "programs"}</p>
+      </div>
+
+      {programs.length ? (
+        <div className="mt-5 grid gap-3">
+          {programs.map((program) => (
+            <article key={program.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-lg font-black text-slate-950">{program.programName}</h3>
+                    <ProgramStatusPill value={program.status} />
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    {program.sourceProfileBucket ? `Profile: ${program.sourceProfileBucket}` : "Manual program"}
+                    {program.sourcePrimaryLimiter ? ` · Primary: ${program.sourcePrimaryLimiter}` : ""}
+                    {program.sourceSecondaryLimiter ? ` · Secondary: ${program.sourceSecondaryLimiter}` : ""}
+                  </p>
+                  <div className="mt-3 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
+                    <span>Created: {formatProgramDate(program.createdAt)}</span>
+                    <span>Edited: {formatProgramDate(program.updatedAt)}</span>
+                    <span>Split: {program.weeklyStructure}</span>
+                    <span>Source: {program.createdFrom}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => onOpenProgram(program)} className="rounded-xl bg-[#1e94d2] px-3 py-2 text-xs font-black text-white hover:bg-[#167bb0]">
+                    Open in PEAQ Build
+                  </button>
+                  <button onClick={() => onDuplicateProgram(program)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">
+                    Duplicate in PEAQ Build
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+          No saved programs yet. Build from a profile, apply a PEAQ Prescription, then save the assigned program from PEAQ Build.
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AthleteProfile({
   athlete,
   onBack,
@@ -4934,6 +5166,8 @@ function AthleteProfile({
   onPrintShapeComparison,
   onShareShapeComparison,
   onUpdateAthlete,
+  onOpenProgram,
+  onDuplicateProgram,
 }: {
   athlete: AthleteProfileRecord;
   onBack: () => void;
@@ -4946,6 +5180,8 @@ function AthleteProfile({
   onPrintShapeComparison: (reportA: SavedReport, reportB: SavedReport) => void;
   onShareShapeComparison: (reportA: SavedReport, reportB: SavedReport) => void;
   onUpdateAthlete: (athleteId: string, updates: AthleteProfileForm) => void;
+  onOpenProgram: (program: SavedProgram) => void;
+  onDuplicateProgram: (program: SavedProgram) => void;
 }) {
   const archived = isArchivedAthlete(athlete);
   const latest = athlete.reports[0];
@@ -4960,6 +5196,7 @@ function AthleteProfile({
           </BrandedPageHeader>
           {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
           <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
+          <ProgramHistory athlete={athlete} onOpenProgram={onOpenProgram} onDuplicateProgram={onDuplicateProgram} />
           <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
             <p className="text-2xl font-black text-slate-950">No saved reports yet.</p>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a complete CSV row for this athlete before reviewing scores, limiters, or report history.</p>
@@ -4980,6 +5217,7 @@ function AthleteProfile({
         {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
         <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
+        <ProgramHistory athlete={athlete} onOpenProgram={onOpenProgram} onDuplicateProgram={onDuplicateProgram} />
         <ReportComparison athlete={athlete} reports={athlete.reports} onPrintComparison={onPrintComparison} onShareComparison={onShareComparison} onPrintShapeComparison={onPrintShapeComparison} onShareShapeComparison={onShareShapeComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
       </div>
@@ -5694,6 +5932,14 @@ export default function AthleteProfilingMVP() {
   const [shapePrint, setShapePrint] = useState<{ athlete: AthleteProfileRecord; reportA: SavedReport; reportB: SavedReport } | null>(null);
   const [shareCardReturn, setShareCardReturn] = useState<AppHistoryState>({ view: "workspace", selectedAthleteId: null, selectedReportId: null });
   const [passwordRecovery, setPasswordRecovery] = useState<PasswordRecoverySession | null>(() => initialPasswordRecovery);
+  const programBuilderOrigin = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return new URL(programBuilderBaseUrl).origin;
+    } catch {
+      return "";
+    }
+  }, []);
 
   const navigate = useCallback((nextView: ViewName, options: { athleteId?: string | null; reportId?: string | null; replace?: boolean } = {}): void => {
     const hasAthleteId = Object.prototype.hasOwnProperty.call(options, "athleteId");
@@ -5796,7 +6042,7 @@ export default function AthleteProfilingMVP() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [coach]);
 
-  function persistCoachToCloud(nextCoach: CoachWorkspace | null): void {
+  const persistCoachToCloud = useCallback((nextCoach: CoachWorkspace | null): void => {
     if (!nextCoach || !authSession || !supabaseConfig.isConfigured) return;
     setCloudStatus("Saving to Supabase...");
     void saveCoachToSupabase(nextCoach, authSession)
@@ -5805,15 +6051,36 @@ export default function AthleteProfilingMVP() {
         const message = error instanceof Error ? error.message : "Cloud save failed.";
         setCloudStatus(`Cloud save failed: ${message}`);
       });
-  }
+  }, [authSession]);
 
-  function updateCoach(updater: (current: CoachWorkspace | null) => CoachWorkspace | null): void {
+  const updateCoach = useCallback((updater: (current: CoachWorkspace | null) => CoachWorkspace | null): void => {
     setCoach((current) => {
       const nextCoach = updater(current);
       persistCoachToCloud(nextCoach);
       return nextCoach;
     });
-  }
+  }, [persistCoachToCloud]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !programBuilderOrigin) return;
+
+    function handleSavedProgramMessage(event: MessageEvent): void {
+      if (event.origin !== programBuilderOrigin || !peaqAccess.canSavePrograms) return;
+      if (!event.data || typeof event.data !== "object") return;
+
+      const message = event.data as { type?: unknown; savedProgram?: unknown };
+      if (message.type !== savedProgramMessageType) return;
+
+      const savedProgram = normalizeSavedProgram(message.savedProgram);
+      if (!savedProgram) return;
+
+      updateCoach((current) => upsertAthleteSavedProgram(current, savedProgram));
+      setCloudStatus(`Saved program history: ${savedProgram.programName}`);
+    }
+
+    window.addEventListener("message", handleSavedProgramMessage);
+    return () => window.removeEventListener("message", handleSavedProgramMessage);
+  }, [programBuilderOrigin, updateCoach]);
 
   async function handleCloudSignIn(email: string, password: string): Promise<void> {
     setAuthMessage("Signing in...");
@@ -5948,8 +6215,29 @@ export default function AthleteProfilingMVP() {
       status: profile.status,
       primaryLimiter: profile.primaryLimiter || "",
       secondaryLimiter: profile.secondaryLimiter || "",
+      athleteId: builderAthleteId || selectedAthleteId,
+      sourceReportId: builderReportId || selectedReportId,
     });
-    const programBuilderWindow = window.open(programBuilderUrl, "_blank", "noopener,noreferrer");
+    const programBuilderWindow = window.open(programBuilderUrl, "_blank");
+
+    if (!programBuilderWindow) {
+      window.location.assign(programBuilderUrl);
+    }
+  }
+
+  function openSavedProgramInBuilder(savedProgram: SavedProgram, duplicate = false): void {
+    if (!peaqAccess.canUseProfileToProgram) return;
+
+    const programBuilderUrl = getProgramBuilderUrl({
+      athleteName: savedProgram.athleteName,
+      archetype: savedProgram.sourceProfileBucket || "",
+      status: savedProgram.sourceProfileBucket === "Foundational" ? "Near Complete Athlete" : "",
+      primaryLimiter: savedProgram.sourcePrimaryLimiter || "",
+      secondaryLimiter: savedProgram.sourceSecondaryLimiter || "",
+      athleteId: savedProgram.athleteId || selectedAthleteId,
+      sourceReportId: savedProgram.sourceReportId || null,
+    }, { savedProgram, duplicate });
+    const programBuilderWindow = window.open(programBuilderUrl, "_blank");
 
     if (!programBuilderWindow) {
       window.location.assign(programBuilderUrl);
@@ -6167,7 +6455,7 @@ export default function AthleteProfilingMVP() {
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return renderWorkspace(coach);
-    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onShareComparison={(reportA, reportB) => openProgressStory(athlete, reportA, reportB)} onPrintShapeComparison={(reportA, reportB) => openShapeComparisonReport(athlete, reportA, reportB)} onShareShapeComparison={(reportA, reportB) => openShapeComparisonStory(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} />;
+    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onShareComparison={(reportA, reportB) => openProgressStory(athlete, reportA, reportB)} onPrintShapeComparison={(reportA, reportB) => openShapeComparisonReport(athlete, reportA, reportB)} onShareShapeComparison={(reportA, reportB) => openShapeComparisonStory(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} onOpenProgram={(program) => openSavedProgramInBuilder(program)} onDuplicateProgram={(program) => openSavedProgramInBuilder(program, true)} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);

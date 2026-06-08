@@ -52,14 +52,21 @@ Current placeholder access flags default open until real billing/auth entitlemen
 VITE_PEAQ_ACCESS_PROFILE=true
 VITE_PEAQ_ACCESS_BUILD=true
 VITE_PEAQ_ACCESS_PROFILE_TO_PROGRAM=true
+VITE_PEAQ_ACCESS_SAVE_PROGRAMS=true
 ```
+
+### Assigned Program History
+
+PEAQ Profile owns the athlete-side Program History for this MVP. When PEAQ Build is opened from a profile report, saved Draft/Assigned programs are sent back to the Profile window and attached to the athlete history. Supabase persistence uses `supabase/migrations/006_saved_program_history.sql`; if that table has not been deployed yet, the app safely falls back to local workspace storage.
+
+Future completed-work uploads and handwriting/OCR extraction are intentionally not active yet. See `docs/program-history-mvp.md` for the planned data path.
 
 ### Production Profile + Build Deployment
 
 The intended split-domain setup is:
 
 - `app.peaqanalytics.com` = PEAQ Profile app
-- `build.peaqanalytics.com` = PEAQ Program Builder app
+- `build.peaqanalytics.com` = PEAQ Build app
 
 Deploy in this order:
 
