@@ -32,8 +32,7 @@ before update on public.assigned_programs
 for each row execute function public.set_updated_at();
 
 create unique index if not exists assigned_programs_coach_client_id_unique
-on public.assigned_programs (coach_id, client_id)
-where client_id is not null;
+on public.assigned_programs (coach_id, client_id);
 
 create index if not exists assigned_programs_coach_athlete_updated
 on public.assigned_programs (coach_id, athlete_id, updated_at desc);
