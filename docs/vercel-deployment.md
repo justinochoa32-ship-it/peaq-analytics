@@ -29,6 +29,8 @@ Add only frontend-safe values in Vercel Project Settings -> Environment Variable
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+If the Supabase project provides a publishable key instead of an anon key, use `VITE_SUPABASE_PUBLISHABLE_KEY` instead of `VITE_SUPABASE_ANON_KEY`.
+
 Never add a Supabase secret key, service role key, database password, or anything named secret to frontend env vars.
 
 ## Custom Domain Plan

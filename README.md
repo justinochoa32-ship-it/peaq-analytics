@@ -10,10 +10,10 @@ Frontend Supabase configuration uses Vite environment variables:
 
 ```bash
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-or-publishable-public-key
+VITE_SUPABASE_ANON_KEY=your-anon-public-key
 ```
 
-For local development, copy `.env.example` to `.env.local` and fill in the public values from Supabase. Do not commit `.env.local`, secret keys, `service_role` keys, or database passwords.
+If your Supabase project provides a publishable key instead of an anon key, set `VITE_SUPABASE_PUBLISHABLE_KEY` instead of `VITE_SUPABASE_ANON_KEY`. For local development, copy `.env.example` to `.env.local` and fill in the public values from Supabase. Do not commit `.env.local`, secret keys, `service_role` keys, or database passwords.
 
 More details are in `docs/supabase-frontend-setup.md`.
 
@@ -57,7 +57,7 @@ VITE_PEAQ_ACCESS_SAVE_PROGRAMS=true
 
 ### Assigned Program History
 
-PEAQ Profile owns the athlete-side Program History for this MVP. When PEAQ Build is opened from a profile report, saved Draft/Assigned programs are sent back to the Profile window and attached to the athlete history. Supabase persistence uses `supabase/migrations/006_saved_program_history.sql`; if that table has not been deployed yet, the app safely falls back to local workspace storage.
+PEAQ Profile owns the athlete-side Program History for this MVP. When PEAQ Build is opened from a profile report, saved Draft/Assigned programs are sent back to the Profile window and attached to the athlete history. Supabase persistence uses `supabase/migrations/006_saved_program_history.sql` and `007_fix_assigned_programs_upsert_index.sql`; if that table has not been deployed yet, the app safely falls back to local workspace storage. Reusable PEAQ Build templates use `supabase/migrations/008_program_templates.sql`.
 
 Future completed-work uploads and handwriting/OCR extraction are intentionally not active yet. See `docs/program-history-mvp.md` for the planned data path.
 
@@ -70,7 +70,7 @@ The intended split-domain setup is:
 
 Deploy in this order:
 
-1. Deploy the Program Builder app first.
+1. Deploy the Program Builder app first with `VITE_SUPABASE_URL` plus either `VITE_SUPABASE_ANON_KEY` or `VITE_SUPABASE_PUBLISHABLE_KEY` set in the Build Vercel project.
 2. Confirm the temporary Program Builder deployment URL works.
 3. Add `build.peaqanalytics.com` to the Program Builder hosting project.
 4. Add the DNS record requested by the host.
