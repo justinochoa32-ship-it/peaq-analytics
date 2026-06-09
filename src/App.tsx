@@ -5645,6 +5645,7 @@ function Workspace({
   const [showArchived, setShowArchived] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
+  const [archiveUndo, setArchiveUndo] = useState<{ athleteIds: string[]; names: string[] } | null>(null);
   const activeAthletes = useMemo(() => getActiveAthletes(coach.athletes), [coach.athletes]);
   const archivedAthletes = useMemo(() => coach.athletes.filter(isArchivedAthlete), [coach.athletes]);
   const libraryAthletes = showArchived ? coach.athletes : activeAthletes;
@@ -5687,6 +5688,12 @@ function Workspace({
   const selectedAthletes = filteredAthletes.filter((athlete) => selectedAthleteIds.includes(athlete.id));
   const allShownSelected = selectableAthleteIds.length > 0 && selectableAthleteIds.every((id) => selectedAthleteIds.includes(id));
 
+  useEffect(() => {
+    if (!archiveUndo) return;
+    const timeoutId = window.setTimeout(() => setArchiveUndo(null), 8000);
+    return () => window.clearTimeout(timeoutId);
+  }, [archiveUndo]);
+
   function clearLibraryFilters() {
     setLibrarySearch("");
     setLibrarySort("name-asc");
@@ -5722,18 +5729,42 @@ function Workspace({
       : Array.from(new Set([...selectedAthleteIds, ...selectableAthleteIds])));
   }
 
+  function getSelectedAthleteArchivePreview(athletes: AthleteProfileRecord[]): string {
+    const previewNames = athletes.slice(0, 8).map((athlete) => `- ${athlete.name}`).join("\n");
+    const remainingCount = athletes.length - 8;
+    return remainingCount > 0 ? `${previewNames}\n- and ${remainingCount} more` : previewNames;
+  }
+
+  function undoArchive(): void {
+    if (!archiveUndo) return;
+    onBulkArchiveState(archiveUndo.athleteIds, null);
+    setArchiveUndo(null);
+  }
+
   function applyBulkArchiveState(archivedAt: string | null): void {
     const actionAthletes = selectedAthletes.filter((athlete) => archivedAt ? !isArchivedAthlete(athlete) : isArchivedAthlete(athlete));
     if (!actionAthletes.length) return;
 
     const actionLabel = archivedAt ? "Archive" : "Restore";
-    const confirmCopy = archivedAt
-      ? `Archive ${actionAthletes.length} athletes?\n\nThey will be hidden from the active Athlete Library, but their saved reports will stay stored.`
-      : `Restore ${actionAthletes.length} athletes to the active Athlete Library?`;
-    if (!window.confirm(confirmCopy)) return;
+    if (archivedAt && actionAthletes.length > 1) {
+      const typedConfirmation = window.prompt(
+        `Archive ${actionAthletes.length} selected athletes?\n\n${getSelectedAthleteArchivePreview(actionAthletes)}\n\nThis hides athletes from the active roster but does not delete them.\n\nType ARCHIVE to confirm.`,
+      );
+      if (typedConfirmation !== "ARCHIVE") return;
+    } else {
+      const confirmCopy = archivedAt
+        ? `Archive ${actionAthletes[0].name}?\n\nThis hides the athlete from the active roster but does not delete them.`
+        : `Restore ${actionAthletes.length} ${actionAthletes.length === 1 ? "athlete" : "athletes"} to the active Athlete Library?`;
+      if (!window.confirm(confirmCopy)) return;
+    }
 
-    onBulkArchiveState(actionAthletes.map((athlete) => athlete.id), archivedAt);
+    const actionAthleteIds = actionAthletes.map((athlete) => athlete.id);
+    onBulkArchiveState(actionAthleteIds, archivedAt);
     cancelSelection();
+    if (archivedAt) {
+      setArchiveUndo({ athleteIds: actionAthleteIds, names: actionAthletes.map((athlete) => athlete.name) });
+      return;
+    }
     window.setTimeout(() => alert(`${actionAthletes.length} ${actionAthletes.length === 1 ? "athlete" : "athletes"} ${actionLabel.toLowerCase()}d.`), 100);
   }
 
@@ -5841,7 +5872,7 @@ function Workspace({
                     {showArchived ? (
                       <button onClick={() => applyBulkArchiveState(null)} disabled={!selectedAthletes.some(isArchivedAthlete)} className="rounded-2xl bg-amber-100 px-4 py-2 text-sm font-black text-amber-900 hover:bg-amber-200 disabled:opacity-40">Restore Selected</button>
                     ) : (
-                      <button onClick={() => applyBulkArchiveState(new Date().toISOString())} disabled={!selectedAthletes.some((athlete) => !isArchivedAthlete(athlete))} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">Archive Selected</button>
+                      <button onClick={() => applyBulkArchiveState(new Date().toISOString())} disabled={!selectedAthletes.some((athlete) => !isArchivedAthlete(athlete))} className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">Archive Selected Athletes</button>
                     )}
                   </div>
                 </div>
@@ -5906,6 +5937,20 @@ function Workspace({
             </div>
           )}
         </section>
+        {archiveUndo ? (
+          <div className="fixed bottom-5 left-1/2 z-50 w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-black text-slate-950">{archiveUndo.names.length} {archiveUndo.names.length === 1 ? "athlete" : "athletes"} archived.</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">Hidden from the active roster, not deleted.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={undoArchive} className="rounded-2xl bg-[#1e94d2] px-4 py-2 text-sm font-black text-white hover:bg-[#167bb0]">Undo Archive</button>
+                <button onClick={() => setArchiveUndo(null)} className="rounded-2xl bg-slate-100 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-200">Dismiss</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </main>
   );
