@@ -37,6 +37,7 @@ Run the migrations in order in the Supabase SQL Editor:
 6. `supabase/migrations/006_saved_program_history.sql`
 7. `supabase/migrations/007_fix_assigned_programs_upsert_index.sql`
 8. `supabase/migrations/008_program_templates.sql`
+9. `supabase/migrations/009_program_assignment_foundation.sql`
 
 The second migration adds `client_id` fields so the current app can preserve existing local athlete/report IDs while Supabase keeps UUID primary keys internally.
 
@@ -49,6 +50,8 @@ The fifth migration adds optional coach and athlete metadata fields used by the 
 The sixth and seventh migrations add and prepare assigned program history for Profile and Build handoff persistence.
 
 The eighth migration adds the coach-owned reusable program templates layer for PEAQ Build.
+
+The ninth migration adds athlete-specific program assignments and the initial planned-vs-completed completion log foundation.
 
 ## Current Status
 

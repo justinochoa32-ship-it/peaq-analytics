@@ -20,6 +20,21 @@ import {
   upsertSavedProgram,
   type SavedProgram,
 } from "./savedPrograms";
+import {
+  archiveProgramAssignmentLocal,
+  createProgramCompletionLog,
+  duplicateProgramAssignmentLocal,
+  getCompletionLogsForAssignment,
+  getProgramAssignmentsForCoach,
+  isMissingProgramAssignmentFoundationError,
+  normalizeProgramAssignments,
+  updateProgramAssignment,
+  updateProgramCompletionLog,
+  upsertProgramAssignment,
+  type ProgramAssignment,
+  type ProgramCompletionLog,
+  type ProgramCompletionStatus,
+} from "./programAssignments";
 
 type Sex = "Male" | "Female";
 type Direction = "lower" | "higher";
@@ -148,6 +163,7 @@ interface AthleteProfileRecord {
   archivedAt: string | null;
   reports: SavedReport[];
   programs: SavedProgram[];
+  assignments: ProgramAssignment[];
 }
 
 interface CoachWorkspace {
@@ -745,6 +761,10 @@ function normalizeAthleteProfile(athlete: Partial<AthleteProfileRecord>, index: 
       athleteId: program.athleteId || id,
       athleteName: program.athleteName || getAthleteDisplayName({ ...athlete, name: athlete.name || latestData.name }),
     })),
+    assignments: normalizeProgramAssignments(athlete.assignments).map((assignment) => ({
+      ...assignment,
+      athleteId: assignment.athleteId || id,
+    })),
   };
 }
 
@@ -876,6 +896,7 @@ function buildAthleteBase(data: AthleteData, athleteId: string, existingAthlete:
     archivedAt: existingAthlete?.archivedAt || null,
     reports: [],
     programs: existingAthlete?.programs || [],
+    assignments: existingAthlete?.assignments || [],
   };
 }
 
@@ -4004,6 +4025,19 @@ function upsertAthleteSavedProgram(current: CoachWorkspace | null, savedProgram:
   };
 }
 
+function upsertAthleteProgramAssignment(current: CoachWorkspace | null, assignment: ProgramAssignment): CoachWorkspace | null {
+  if (!current) return current;
+  const normalizedCoach = normalizeCoachWorkspace(current);
+  if (!normalizedCoach) return current;
+
+  return {
+    ...normalizedCoach,
+    athletes: normalizedCoach.athletes.map((athlete) => athlete.id === assignment.athleteId
+      ? { ...athlete, assignments: upsertProgramAssignment(athlete.assignments, assignment) }
+      : athlete),
+  };
+}
+
 function isProfile(value: unknown): value is Profile {
   return Boolean(value && typeof value === "object" && "bucketItems" in value && "scoreList" in value);
 }
@@ -4073,6 +4107,15 @@ function isMissingProgramTableError(error: unknown): boolean {
   return message.includes("assigned_programs") && (message.includes("does not exist") || message.includes("schema cache"));
 }
 
+async function loadProgramAssignmentsFromSupabase(session: SupabaseSession): Promise<ProgramAssignment[]> {
+  try {
+    return await getProgramAssignmentsForCoach(session);
+  } catch (error) {
+    if (isMissingProgramAssignmentFoundationError(error)) return [];
+    throw error;
+  }
+}
+
 async function loadProgramRowsFromSupabase(session: SupabaseSession): Promise<CloudProgramRow[]> {
   try {
     return await supabaseFetch<CloudProgramRow[]>("/rest/v1/assigned_programs?select=id,client_id,athlete_id,source_report_client_id,source_profile_bucket,source_primary_limiter,source_secondary_limiter,program_name,weekly_structure,status,created_from,program_json,notes,assigned_at,completed_at,created_at,updated_at&order=updated_at.desc", {
@@ -4085,7 +4128,7 @@ async function loadProgramRowsFromSupabase(session: SupabaseSession): Promise<Cl
 }
 
 async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWorkspace> {
-  const [profileRows, athleteRows, reportRows, programRows] = await Promise.all([
+  const [profileRows, athleteRows, reportRows, programRows, assignmentRows] = await Promise.all([
     supabaseFetch<CloudProfileRow[]>("/rest/v1/profiles?select=id,email,coach_name,organization,first_name,last_name,display_name,contact_email,role_title,phone,website,location,notes&limit=1", {
       accessToken: session.accessToken,
     }),
@@ -4096,10 +4139,12 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
       accessToken: session.accessToken,
     }),
     loadProgramRowsFromSupabase(session),
+    loadProgramAssignmentsFromSupabase(session),
   ]);
   const profile = profileRows[0];
   const reportsByAthleteId = new Map<string, SavedReport[]>();
   const programsByAthleteId = new Map<string, SavedProgram[]>();
+  const assignmentsByAthleteId = new Map<string, ProgramAssignment[]>();
 
   reportRows.forEach((row) => {
     const reports = reportsByAthleteId.get(row.athlete_id) || [];
@@ -4122,6 +4167,12 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
     programsByAthleteId.set(row.athlete_id, programs);
   });
 
+  assignmentRows.forEach((assignment) => {
+    const assignments = assignmentsByAthleteId.get(assignment.athleteId) || [];
+    assignments.push(assignment);
+    assignmentsByAthleteId.set(assignment.athleteId, assignments);
+  });
+
   const athletes: AthleteProfileRecord[] = athleteRows.map((row) => ({
     id: row.client_id || `athlete-${row.id}`,
     name: row.name,
@@ -4142,6 +4193,9 @@ async function loadCoachFromSupabase(session: SupabaseSession): Promise<CoachWor
     archivedAt: row.archived_at || null,
     reports: (reportsByAthleteId.get(row.id) || []).sort((a, b) => b.date.localeCompare(a.date)),
     programs: (programsByAthleteId.get(row.id) || []).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    assignments: (assignmentsByAthleteId.get(row.id) || [])
+      .map((assignment) => ({ ...assignment, athleteId: row.client_id || `athlete-${row.id}`, cloudAthleteId: row.id }))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
   }));
 
   return normalizeCoachWorkspace({
@@ -4297,18 +4351,53 @@ async function saveCoachToSupabase(coach: CoachWorkspace, session: SupabaseSessi
     }));
   });
 
-  if (!programRows.length) return;
+  if (programRows.length) {
+    try {
+      await supabaseFetch("/rest/v1/assigned_programs?on_conflict=coach_id,client_id", {
+        method: "POST",
+        accessToken: session.accessToken,
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(programRows),
+      });
+    } catch (error) {
+      if (!isMissingProgramTableError(error)) throw error;
+    }
+  }
+
+  const assignmentRows = normalizedCoach.athletes.flatMap((athlete) => {
+    const cloudAthleteId = athleteIdByClientId.get(athlete.id);
+    if (!cloudAthleteId) return [];
+
+    return athlete.assignments.map((assignment) => ({
+      id: assignment.id,
+      coach_id: session.user.id,
+      athlete_id: cloudAthleteId,
+      template_id: assignment.templateId || null,
+      assignment_name: assignment.assignmentName || "Untitled Assignment",
+      phase_name: assignment.phaseName || null,
+      weekly_structure: assignment.weeklyStructure,
+      start_date: assignment.startDate || null,
+      end_date: assignment.endDate || null,
+      status: assignment.status,
+      program_json: assignment.programJson,
+      coach_notes: assignment.coachNotes || null,
+      created_at: assignment.createdAt,
+      updated_at: assignment.updatedAt,
+      archived_at: assignment.archivedAt || null,
+    }));
+  });
+
+  if (!assignmentRows.length) return;
 
   try {
-    await supabaseFetch("/rest/v1/assigned_programs?on_conflict=coach_id,client_id", {
+    await supabaseFetch("/rest/v1/program_assignments?on_conflict=id", {
       method: "POST",
       accessToken: session.accessToken,
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify(programRows),
+      body: JSON.stringify(assignmentRows),
     });
   } catch (error) {
-    if (isMissingProgramTableError(error)) return;
-    throw error;
+    if (!isMissingProgramAssignmentFoundationError(error)) throw error;
   }
 }
 
@@ -5090,29 +5179,567 @@ function ProgramStatusPill({ value }: { value: SavedProgram["status"] }) {
   return <span className={`rounded-full px-3 py-1 text-xs font-black ${tone}`}>{value}</span>;
 }
 
+function AssignmentStatusPill({ value }: { value: ProgramAssignment["status"] }) {
+  const tone = value === "assigned" || value === "in_progress"
+    ? "bg-[#1e94d2] text-white shadow-sm"
+    : value === "completed" || value === "reviewed"
+      ? "bg-emerald-100 text-emerald-800"
+      : value === "archived"
+        ? "bg-slate-200 text-slate-600"
+        : "bg-slate-100 text-slate-600";
+  const label = value.split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+
+  return <span className={`rounded-full px-3 py-1 text-xs font-black ${tone}`}>{label}</span>;
+}
+
+type AssignmentDetailTab = "planned" | "complete" | "review";
+
+type PlannedExercise = {
+  key: string;
+  matchKey: string;
+  sessionIndex: number;
+  sessionName: string;
+  sectionName: string;
+  exerciseId?: string;
+  exerciseName: string;
+  plannedJson: Record<string, unknown>;
+  plannedWork: string;
+};
+
+type CompletionDraft = {
+  logId?: string;
+  actualLoad: string;
+  actualReps: string;
+  rpe: string;
+  status: ProgramCompletionStatus;
+  painFlag: boolean;
+  notes: string;
+};
+
+const completionStatusOptions: ProgramCompletionStatus[] = ["completed", "modified", "missed", "partial"];
+
+function getCompletionStatusLabel(status: ProgramCompletionStatus): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function getRecordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function getUnknownString(value: unknown): string {
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function getPlannedWork(row: Record<string, unknown>): string {
+  return ["w1", "w2", "w3", "w4"]
+    .map((key) => getUnknownString(row[key]))
+    .filter(Boolean)
+    .join(" | ") || "Planned details not set";
+}
+
+function getExerciseMatchKey(sessionIndex: number, exerciseId: string | undefined, exerciseName: string): string {
+  return exerciseId ? `${sessionIndex}:id:${exerciseId}` : `${sessionIndex}:name:${exerciseName.toLowerCase()}`;
+}
+
+function getLogMatchKey(log: ProgramCompletionLog): string {
+  return getExerciseMatchKey(log.sessionIndex, log.exerciseId, log.exerciseName);
+}
+
+function getCompletionDraftFromLog(log: ProgramCompletionLog | undefined): CompletionDraft {
+  const completedJson = getRecordValue(log?.completedJson);
+  return {
+    logId: log?.id,
+    actualLoad: getUnknownString(completedJson?.actualLoad),
+    actualReps: getUnknownString(completedJson?.actualReps),
+    rpe: log?.rpe === undefined ? "" : String(log.rpe),
+    status: log?.status || "completed",
+    painFlag: log?.painFlag === true,
+    notes: log?.notes || "",
+  };
+}
+
+function getCompletionLogForExercise(logs: ProgramCompletionLog[], exercise: PlannedExercise): ProgramCompletionLog | undefined {
+  return logs.find((log) => getLogMatchKey(log) === exercise.matchKey);
+}
+
+function getPlannedExercises(programJson: Record<string, unknown>): PlannedExercise[] {
+  const days = Array.isArray(programJson.days) ? programJson.days : [];
+  const sections = [
+    ["prep", "Prep"],
+    ["saq", "SAQ"],
+    ["lift", "Lift"],
+  ] as const;
+
+  return days.flatMap((day, dayIndex) => {
+    const dayRecord = getRecordValue(day);
+    if (!dayRecord) return [];
+
+    const sessionIndex = dayIndex;
+    const sessionName = getUnknownString(dayRecord.title) || `Day ${dayIndex + 1}`;
+
+    return sections.flatMap(([sectionKey, sectionName]) => {
+      const rows = Array.isArray(dayRecord[sectionKey]) ? dayRecord[sectionKey] : [];
+
+      return rows.flatMap((row, rowIndex) => {
+        const rowRecord = getRecordValue(row);
+        if (!rowRecord) return [];
+
+        const exerciseName = getUnknownString(rowRecord.name);
+        if (!exerciseName) return [];
+
+        const exerciseId = getUnknownString(rowRecord.id) || undefined;
+        const plannedJson = {
+          sessionIndex,
+          sessionName,
+          sectionName,
+          ...rowRecord,
+        };
+        const matchKey = getExerciseMatchKey(sessionIndex, exerciseId, exerciseName);
+
+        return [{
+          key: `${sessionIndex}:${sectionKey}:${exerciseId || rowIndex}:${exerciseName}`,
+          matchKey,
+          sessionIndex,
+          sessionName,
+          sectionName,
+          exerciseId,
+          exerciseName,
+          plannedJson,
+          plannedWork: getPlannedWork(rowRecord),
+        }];
+      });
+    });
+  });
+}
+
+function AssignmentDetailModal({
+  assignment,
+  authSession,
+  onClose,
+  onAssignmentUpdated,
+}: {
+  assignment: ProgramAssignment;
+  authSession: SupabaseSession | null;
+  onClose: () => void;
+  onAssignmentUpdated: (assignment: ProgramAssignment) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<AssignmentDetailTab>("planned");
+  const [completionLogs, setCompletionLogs] = useState<ProgramCompletionLog[]>([]);
+  const [completionDrafts, setCompletionDrafts] = useState<Record<string, CompletionDraft>>({});
+  const [completionStatus, setCompletionStatus] = useState("");
+  const [isSavingCompletion, setIsSavingCompletion] = useState(false);
+  const plannedExercises = useMemo(() => getPlannedExercises(assignment.programJson), [assignment.programJson]);
+  const loggedExerciseCount = plannedExercises.filter((exercise) => getCompletionLogForExercise(completionLogs, exercise)).length;
+  const allPlannedExercisesLogged = plannedExercises.length > 0 && loggedExerciseCount === plannedExercises.length;
+  const canSaveCompletion = Boolean(authSession && supabaseConfig.isConfigured);
+  const displayedCompletionStatus = !canSaveCompletion
+    ? "Sign in with Supabase enabled to save digital completion logs."
+    : completionStatus;
+
+  function getDraftForExercise(exercise: PlannedExercise): CompletionDraft {
+    return completionDrafts[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise));
+  }
+
+  useEffect(() => {
+    if (!authSession || !supabaseConfig.isConfigured) {
+      return;
+    }
+
+    let isActive = true;
+
+    void getCompletionLogsForAssignment(authSession, assignment.id)
+      .then((logs) => {
+        if (!isActive) return;
+        setCompletionLogs(logs);
+        setCompletionStatus(logs.length ? "Completion logs loaded." : "No completion logs yet.");
+      })
+      .catch((error) => {
+        if (!isActive) return;
+        setCompletionStatus(isMissingProgramAssignmentFoundationError(error)
+          ? "Completion logs need the program assignment foundation migration before they can sync."
+          : `Could not load completion logs: ${error instanceof Error ? error.message : "Unknown error."}`);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [assignment.id, authSession]);
+
+  function updateCompletionDraft(exercise: PlannedExercise, updates: Partial<CompletionDraft>): void {
+    setCompletionDrafts((current) => ({
+      ...current,
+      [exercise.key]: {
+        ...(current[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise))),
+        ...updates,
+      },
+    }));
+  }
+
+  async function saveCompletion(): Promise<void> {
+    if (!authSession || !supabaseConfig.isConfigured) {
+      setCompletionStatus("Sign in with Supabase enabled to save completion logs.");
+      return;
+    }
+
+    if (!plannedExercises.length) {
+      setCompletionStatus("No recognizable planned exercises were found for this assignment.");
+      return;
+    }
+
+    setIsSavingCompletion(true);
+    setCompletionStatus("Saving completion logs...");
+
+    try {
+      const savedLogs = await Promise.all(plannedExercises.map((exercise) => {
+        const draft = getDraftForExercise(exercise);
+        const existingLog = draft.logId
+          ? completionLogs.find((log) => log.id === draft.logId)
+          : getCompletionLogForExercise(completionLogs, exercise);
+        const rpeValue = draft.rpe.trim() ? Number(draft.rpe) : undefined;
+        const completedJson = {
+          actualLoad: draft.actualLoad.trim(),
+          actualReps: draft.actualReps.trim(),
+        };
+
+        if (existingLog) {
+          return updateProgramCompletionLog(authSession, existingLog.id, {
+            sessionIndex: exercise.sessionIndex,
+            sessionName: exercise.sessionName,
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exerciseName,
+            plannedJson: exercise.plannedJson,
+            completedJson,
+            status: draft.status,
+            rpe: Number.isFinite(rpeValue) ? rpeValue : undefined,
+            painFlag: draft.painFlag,
+            notes: draft.notes,
+            completedAt: new Date().toISOString(),
+          });
+        }
+
+        return createProgramCompletionLog(authSession, {
+          assignmentId: assignment.id,
+          athleteId: assignment.cloudAthleteId || assignment.athleteId,
+          sessionIndex: exercise.sessionIndex,
+          sessionName: exercise.sessionName,
+          exerciseId: exercise.exerciseId,
+          exerciseName: exercise.exerciseName,
+          plannedJson: exercise.plannedJson,
+          completedJson,
+          status: draft.status,
+          rpe: Number.isFinite(rpeValue) ? rpeValue : undefined,
+          painFlag: draft.painFlag,
+          notes: draft.notes,
+          completedAt: new Date().toISOString(),
+        });
+      }));
+
+      setCompletionLogs(savedLogs);
+
+      if (assignment.status === "draft" || assignment.status === "assigned") {
+        const updatedAssignment = await updateProgramAssignment(authSession, assignment.id, { status: "in_progress" });
+        onAssignmentUpdated({
+          ...updatedAssignment,
+          athleteId: assignment.athleteId,
+          cloudAthleteId: assignment.cloudAthleteId || updatedAssignment.athleteId,
+        });
+      }
+
+      setCompletionStatus(`Saved ${savedLogs.length} completion ${savedLogs.length === 1 ? "log" : "logs"}.`);
+      setActiveTab("review");
+    } catch (error) {
+      setCompletionStatus(isMissingProgramAssignmentFoundationError(error)
+        ? "Completion logs need the program assignment foundation migration before they can sync."
+        : `Could not save completion logs: ${error instanceof Error ? error.message : "Unknown error."}`);
+    } finally {
+      setIsSavingCompletion(false);
+    }
+  }
+
+  async function markAssignmentCompleted(): Promise<void> {
+    if (!authSession || !supabaseConfig.isConfigured) {
+      setCompletionStatus("Sign in with Supabase enabled to mark this assignment completed.");
+      return;
+    }
+
+    if (!allPlannedExercisesLogged) {
+      setCompletionStatus("Save completion logs for every detected exercise before marking the assignment completed.");
+      return;
+    }
+
+    setIsSavingCompletion(true);
+    setCompletionStatus("Marking assignment completed...");
+
+    try {
+      const updatedAssignment = await updateProgramAssignment(authSession, assignment.id, { status: "completed" });
+      onAssignmentUpdated({
+        ...updatedAssignment,
+        athleteId: assignment.athleteId,
+        cloudAthleteId: assignment.cloudAthleteId || updatedAssignment.athleteId,
+      });
+      setCompletionStatus("Assignment marked completed.");
+    } catch (error) {
+      setCompletionStatus(isMissingProgramAssignmentFoundationError(error)
+        ? "Program assignments need the foundation migration before status can sync."
+        : `Could not mark assignment completed: ${error instanceof Error ? error.message : "Unknown error."}`);
+    } finally {
+      setIsSavingCompletion(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
+      <section className="max-h-[90vh] w-full max-w-6xl overflow-auto rounded-3xl bg-white p-6 shadow-xl">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Assignment Detail</p>
+            <h2 className="text-2xl font-black text-slate-950">{assignment.assignmentName}</h2>
+            <p className="mt-2 text-sm font-semibold text-slate-500">
+              {[assignment.phaseName, assignment.weeklyStructure, assignment.startDate ? `Starts ${formatProgramDate(assignment.startDate)}` : "", assignment.endDate ? `Ends ${formatProgramDate(assignment.endDate)}` : ""].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <AssignmentStatusPill value={assignment.status} />
+            <button onClick={onClose} className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Close</button>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2">
+          {(["planned", "complete", "review"] as AssignmentDetailTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`rounded-xl px-4 py-2 text-xs font-black ${activeTab === tab ? "bg-[#1e94d2] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+            >
+              {tab === "planned" ? "Planned Program" : tab === "complete" ? "Complete Program" : "Review"}
+            </button>
+          ))}
+        </div>
+
+        {displayedCompletionStatus ? <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700">{displayedCompletionStatus}</p> : null}
+
+        {activeTab === "planned" ? (
+          <div className="mt-5 grid gap-4">
+            {assignment.coachNotes ? (
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">Coach Notes</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">{assignment.coachNotes}</p>
+              </div>
+            ) : null}
+            {plannedExercises.length ? (
+              <div className="grid gap-3">
+                {plannedExercises.map((exercise) => (
+                  <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-black text-slate-950">{exercise.exerciseName}</p>
+                        <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sessionName} · {exercise.sectionName}</p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{exercise.plannedWork}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+                No recognizable exercises were found in this assignment program JSON.
+              </div>
+            )}
+            <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-white/60">Read-only Planned Program JSON</p>
+              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-5 text-white/80">{JSON.stringify(assignment.programJson, null, 2)}</pre>
+            </div>
+          </div>
+        ) : null}
+
+        {activeTab === "complete" ? (
+          <div className="mt-5 grid gap-4">
+            {!canSaveCompletion ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+                Sign in with Supabase configured to save completion logs. You can still review the planned program here.
+              </div>
+            ) : null}
+            {plannedExercises.length ? (
+              <>
+                <div className="grid gap-3">
+                  {plannedExercises.map((exercise) => {
+                    const draft = getDraftForExercise(exercise);
+
+                    return (
+                      <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="font-black text-slate-950">{exercise.exerciseName}</p>
+                            <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sessionName} · {exercise.sectionName} · Planned: {exercise.plannedWork}</p>
+                          </div>
+                          <select value={draft.status} onChange={(event) => updateCompletionDraft(exercise, { status: event.target.value as ProgramCompletionStatus })} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">
+                            {completionStatusOptions.map((status) => (
+                              <option key={status} value={status}>{getCompletionStatusLabel(status)}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_0.7fr_auto] md:items-end">
+                          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                            Actual Load
+                            <input value={draft.actualLoad} onChange={(event) => updateCompletionDraft(exercise, { actualLoad: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 185 lb" />
+                          </label>
+                          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                            Actual Reps
+                            <input value={draft.actualReps} onChange={(event) => updateCompletionDraft(exercise, { actualReps: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 3x5" />
+                          </label>
+                          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                            RPE
+                            <input type="number" min="0" max="10" step="0.5" value={draft.rpe} onChange={(event) => updateCompletionDraft(exercise, { rpe: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="0-10" />
+                          </label>
+                          <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-xs font-black uppercase tracking-wide text-slate-600">
+                            <input type="checkbox" checked={draft.painFlag} onChange={(event) => updateCompletionDraft(exercise, { painFlag: event.target.checked })} />
+                            Pain
+                          </label>
+                        </div>
+                        <label className="mt-3 block text-xs font-black uppercase tracking-wide text-slate-500">
+                          Notes
+                          <textarea value={draft.notes} onChange={(event) => updateCompletionDraft(exercise, { notes: event.target.value })} className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="Coach notes, modification reason, or context" />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button disabled={isSavingCompletion || !canSaveCompletion} onClick={() => void saveCompletion()} className="rounded-xl bg-[#1e94d2] px-4 py-3 text-sm font-black text-white hover:bg-[#167bb0] disabled:opacity-50">
+                    {isSavingCompletion ? "Saving..." : "Save Completion"}
+                  </button>
+                  <button disabled={isSavingCompletion || !canSaveCompletion || !allPlannedExercisesLogged || assignment.status === "completed"} onClick={() => void markAssignmentCompleted()} className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">
+                    Mark Assignment Completed
+                  </button>
+                </div>
+                {!allPlannedExercisesLogged ? <p className="text-xs font-bold text-slate-500">Save completion logs for all detected exercises before marking the assignment completed.</p> : null}
+              </>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+                This assignment does not have recognizable exercises to complete yet.
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {activeTab === "review" ? (
+          <div className="mt-5 grid gap-3">
+            {plannedExercises.length ? plannedExercises.map((exercise) => {
+              const draft = getDraftForExercise(exercise);
+
+              return (
+                <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="font-black text-slate-950">{exercise.exerciseName}</p>
+                      <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sessionName} · {exercise.sectionName}</p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{getCompletionStatusLabel(draft.status)}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+                    <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Planned</p><p className="mt-1 font-bold text-slate-800">{exercise.plannedWork}</p></div>
+                    <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Completed</p><p className="mt-1 font-bold text-slate-800">{[draft.actualLoad, draft.actualReps].filter(Boolean).join(" · ") || "Not entered"}</p></div>
+                    <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">RPE / Pain</p><p className="mt-1 font-bold text-slate-800">{draft.rpe || "No RPE"} · {draft.painFlag ? "Pain flagged" : "No pain flag"}</p></div>
+                  </div>
+                  {draft.notes ? <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-600">{draft.notes}</p> : null}
+                </div>
+              );
+            }) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+                No planned exercises are available for Planned vs Completed review.
+              </div>
+            )}
+            {plannedExercises.length && !completionLogs.length ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+                No completion logs saved yet.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 function ProgramHistory({
   athlete,
+  authSession,
   onOpenProgram,
   onDuplicateProgram,
+  onDuplicateAssignment,
+  onArchiveAssignment,
+  onAssignmentUpdated,
 }: {
   athlete: AthleteProfileRecord;
+  authSession: SupabaseSession | null;
   onOpenProgram: (program: SavedProgram) => void;
   onDuplicateProgram: (program: SavedProgram) => void;
+  onDuplicateAssignment: (assignment: ProgramAssignment) => void;
+  onArchiveAssignment: (assignment: ProgramAssignment) => void;
+  onAssignmentUpdated: (assignment: ProgramAssignment) => void;
 }) {
   const programs = athlete.programs || [];
+  const assignments = athlete.assignments || [];
+  const [selectedAssignment, setSelectedAssignment] = useState<ProgramAssignment | null>(null);
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-sm font-black uppercase tracking-wide text-slate-500">Program History</p>
-          <h2 className="text-2xl font-black">Saved Programs</h2>
+          <h2 className="text-2xl font-black">Assignments & Saved Programs</h2>
         </div>
-        <p className="text-sm font-bold text-slate-500">{programs.length} {programs.length === 1 ? "program" : "programs"}</p>
+        <p className="text-sm font-bold text-slate-500">{assignments.length} {assignments.length === 1 ? "assignment" : "assignments"} · {programs.length} {programs.length === 1 ? "saved program" : "saved programs"}</p>
       </div>
 
-      {programs.length ? (
+      {assignments.length ? (
         <div className="mt-5 grid gap-3">
+          {assignments.map((assignment) => (
+            <article key={assignment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-lg font-black text-slate-950">{assignment.assignmentName}</h3>
+                    <AssignmentStatusPill value={assignment.status} />
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    {assignment.phaseName || "No phase set"}
+                    {assignment.startDate ? ` · Starts ${formatProgramDate(assignment.startDate)}` : ""}
+                    {assignment.endDate ? ` · Ends ${formatProgramDate(assignment.endDate)}` : ""}
+                  </p>
+                  <div className="mt-3 grid gap-2 text-xs font-bold text-slate-500 sm:grid-cols-2 lg:grid-cols-4">
+                    <span>Created: {formatProgramDate(assignment.createdAt)}</span>
+                    <span>Updated: {formatProgramDate(assignment.updatedAt)}</span>
+                    <span>Split: {assignment.weeklyStructure}</span>
+                    <span>{assignment.templateId ? "Template-based" : "Custom assignment"}</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setSelectedAssignment(assignment)} className="rounded-xl bg-[#1e94d2] px-3 py-2 text-xs font-black text-white hover:bg-[#167bb0]">
+                    Open / View
+                  </button>
+                  <button onClick={() => onDuplicateAssignment(assignment)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">
+                    Duplicate
+                  </button>
+                  {assignment.status !== "archived" ? (
+                    <button onClick={() => onArchiveAssignment(assignment)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">
+                      Archive
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
+          No athlete-specific assignments yet. Use PEAQ Build to assign a generated or template-loaded program to this athlete.
+        </div>
+      )}
+
+      {programs.length ? (
+        <div className="mt-6 grid gap-3">
+          <p className="text-xs font-black uppercase tracking-wide text-slate-500">Legacy Saved Programs</p>
           {programs.map((program) => (
             <article key={program.id} className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -5150,12 +5777,24 @@ function ProgramHistory({
           No saved programs yet. Build from a profile, apply a PEAQ Prescription, then save the assigned program from PEAQ Build.
         </div>
       )}
+      {selectedAssignment ? (
+        <AssignmentDetailModal
+          assignment={selectedAssignment}
+          authSession={authSession}
+          onClose={() => setSelectedAssignment(null)}
+          onAssignmentUpdated={(nextAssignment) => {
+            setSelectedAssignment(nextAssignment);
+            onAssignmentUpdated(nextAssignment);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
 
 function AthleteProfile({
   athlete,
+  authSession,
   onBack,
   onRunReport,
   onArchive,
@@ -5168,8 +5807,12 @@ function AthleteProfile({
   onUpdateAthlete,
   onOpenProgram,
   onDuplicateProgram,
+  onDuplicateAssignment,
+  onArchiveAssignment,
+  onAssignmentUpdated,
 }: {
   athlete: AthleteProfileRecord;
+  authSession: SupabaseSession | null;
   onBack: () => void;
   onRunReport: () => void;
   onArchive: () => void;
@@ -5182,6 +5825,9 @@ function AthleteProfile({
   onUpdateAthlete: (athleteId: string, updates: AthleteProfileForm) => void;
   onOpenProgram: (program: SavedProgram) => void;
   onDuplicateProgram: (program: SavedProgram) => void;
+  onDuplicateAssignment: (assignment: ProgramAssignment) => void;
+  onArchiveAssignment: (assignment: ProgramAssignment) => void;
+  onAssignmentUpdated: (assignment: ProgramAssignment) => void;
 }) {
   const archived = isArchivedAthlete(athlete);
   const latest = athlete.reports[0];
@@ -5196,7 +5842,7 @@ function AthleteProfile({
           </BrandedPageHeader>
           {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
           <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
-          <ProgramHistory athlete={athlete} onOpenProgram={onOpenProgram} onDuplicateProgram={onDuplicateProgram} />
+          <ProgramHistory athlete={athlete} authSession={authSession} onOpenProgram={onOpenProgram} onDuplicateProgram={onDuplicateProgram} onDuplicateAssignment={onDuplicateAssignment} onArchiveAssignment={onArchiveAssignment} onAssignmentUpdated={onAssignmentUpdated} />
           <section className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
             <p className="text-2xl font-black text-slate-950">No saved reports yet.</p>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-500">Run a new report or import a complete CSV row for this athlete before reviewing scores, limiters, or report history.</p>
@@ -5217,7 +5863,7 @@ function AthleteProfile({
         {archived ? <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm font-bold text-amber-900">This athlete is archived and hidden from the active Athlete Library. Restore the profile to run new reports.</section> : null}
         <AthleteDetailsPanel athlete={athlete} onSave={(updates) => onUpdateAthlete(athlete.id, updates)} />
         <section className="grid gap-4 md:grid-cols-4"><SummaryCard label="Reports" value={athlete.reports.length} helper="Saved testing dates" /><SummaryCard label="Latest Overall" value={isFiniteNumber(latest.overall) ? latest.overall.toFixed(0) : "—"} helper="Current score" /><SummaryCard label="Latest Rating" value={isFiniteNumber(latest.rating) ? latest.rating.toFixed(1) : "—"} helper="Profile stars" /><SummaryCard label="Current Limiter" value={latest.primaryLimiter} helper="Primary priority" /></section>
-        <ProgramHistory athlete={athlete} onOpenProgram={onOpenProgram} onDuplicateProgram={onDuplicateProgram} />
+        <ProgramHistory athlete={athlete} authSession={authSession} onOpenProgram={onOpenProgram} onDuplicateProgram={onDuplicateProgram} onDuplicateAssignment={onDuplicateAssignment} onArchiveAssignment={onArchiveAssignment} onAssignmentUpdated={onAssignmentUpdated} />
         <ReportComparison athlete={athlete} reports={athlete.reports} onPrintComparison={onPrintComparison} onShareComparison={onShareComparison} onPrintShapeComparison={onPrintShapeComparison} onShareShapeComparison={onShareShapeComparison} />
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-black uppercase tracking-wide text-slate-500">Report History</p><h2 className="text-2xl font-black">Saved Reports</h2><div className="mt-5 grid gap-3">{athlete.reports.map((report) => <button key={report.id} onClick={() => onOpenReport(report)} className="rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-black text-slate-950">{report.date}</p><p className="text-sm font-semibold text-slate-500">{[report.archetype, report.status, getCorrectionNote(report)].filter(Boolean).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><StatusPill value={report.status} /><LimiterPill value={report.primaryLimiter} /></div></div></button>)}</div></section>
       </div>
@@ -6289,6 +6935,35 @@ export default function AthleteProfilingMVP() {
     }
   }
 
+  function duplicateAssignment(assignment: ProgramAssignment): void {
+    if (!selectedAthleteId) return;
+
+    updateCoach((current) => upsertAthleteProgramAssignment(current, {
+      ...duplicateProgramAssignmentLocal(assignment),
+      athleteId: selectedAthleteId,
+    }));
+    setCloudStatus(`Duplicated assignment: ${assignment.assignmentName}`);
+  }
+
+  function archiveAssignment(assignment: ProgramAssignment): void {
+    if (!selectedAthleteId) return;
+
+    updateCoach((current) => upsertAthleteProgramAssignment(current, {
+      ...archiveProgramAssignmentLocal(assignment),
+      athleteId: selectedAthleteId,
+    }));
+    setCloudStatus(`Archived assignment: ${assignment.assignmentName}`);
+  }
+
+  function updateAssignmentInHistory(assignment: ProgramAssignment): void {
+    if (!selectedAthleteId) return;
+
+    updateCoach((current) => upsertAthleteProgramAssignment(current, {
+      ...assignment,
+      athleteId: selectedAthleteId,
+    }));
+  }
+
   function openShareCard(data: AthleteData, profile: Profile, returnState: AppHistoryState = { view, selectedAthleteId, selectedReportId }): void {
     setPrintData(data);
     setPrintProfile(profile);
@@ -6500,7 +7175,7 @@ export default function AthleteProfilingMVP() {
   if (view === "athlete") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
     if (!athlete) return renderWorkspace(coach);
-    return <AthleteProfile athlete={athlete} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onShareComparison={(reportA, reportB) => openProgressStory(athlete, reportA, reportB)} onPrintShapeComparison={(reportA, reportB) => openShapeComparisonReport(athlete, reportA, reportB)} onShareShapeComparison={(reportA, reportB) => openShapeComparisonStory(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} onOpenProgram={(program) => openSavedProgramInBuilder(program)} onDuplicateProgram={(program) => openSavedProgramInBuilder(program, true)} />;
+    return <AthleteProfile athlete={athlete} authSession={authSession} onBack={goWorkspace} onRunReport={() => startAthleteReport(athlete)} onArchive={() => archiveAthlete(athlete)} onRestore={() => restoreAthlete(athlete.id)} onOpenReport={(report) => openSavedReport(report.id)} onPrintComparison={(reportA, reportB) => openProgressReport(athlete, reportA, reportB)} onShareComparison={(reportA, reportB) => openProgressStory(athlete, reportA, reportB)} onPrintShapeComparison={(reportA, reportB) => openShapeComparisonReport(athlete, reportA, reportB)} onShareShapeComparison={(reportA, reportB) => openShapeComparisonStory(athlete, reportA, reportB)} onUpdateAthlete={updateAthleteProfile} onOpenProgram={(program) => openSavedProgramInBuilder(program)} onDuplicateProgram={(program) => openSavedProgramInBuilder(program, true)} onDuplicateAssignment={duplicateAssignment} onArchiveAssignment={archiveAssignment} onAssignmentUpdated={updateAssignmentInHistory} />;
   }
   if (view === "saved-report") {
     const athlete = coach.athletes.find((item) => item.id === selectedAthleteId);
