@@ -5194,29 +5194,75 @@ function AssignmentStatusPill({ value }: { value: ProgramAssignment["status"] })
 
 type AssignmentDetailTab = "planned" | "complete" | "review";
 
+type CompletionType = "lift" | "sprint" | "cod" | "plyo" | "mobility" | "generic";
+
+type CompletionMode = "simple" | "detailed";
+
+type CompletionFlag = "none" | "pain" | "modified" | "missed" | "fatigue" | "time";
+
 type PlannedExercise = {
   key: string;
   matchKey: string;
+  weekIndex: number;
+  dayIndex: number;
   sessionIndex: number;
   sessionName: string;
+  sectionKey: "prep" | "saq" | "lift";
   sectionName: string;
+  exerciseIndex: number;
   exerciseId?: string;
   exerciseName: string;
   plannedJson: Record<string, unknown>;
   plannedWork: string;
+  completionType: CompletionType;
+  suggestedRows: number;
+  usesSideTimes: boolean;
+};
+
+type CompletionSetDraft = {
+  setIndex: number;
+  load: string;
+  reps: string;
+  rpe: string;
+  vbtSpeed: string;
+  time: string;
+  leftTime: string;
+  rightTime: string;
+  distance: string;
+  height: string;
+  contacts: string;
+  duration: string;
+  notes: string;
 };
 
 type CompletionDraft = {
   logId?: string;
-  actualLoad: string;
-  actualReps: string;
-  rpe: string;
+  mode: CompletionMode;
   status: ProgramCompletionStatus;
-  painFlag: boolean;
+  flag: CompletionFlag;
+  bestTime: string;
+  summary: string;
   notes: string;
+  sets: CompletionSetDraft[];
 };
 
 const completionStatusOptions: ProgramCompletionStatus[] = ["completed", "modified", "missed", "partial"];
+const completionFlagOptions: Array<{ value: CompletionFlag; label: string }> = [
+  { value: "none", label: "None" },
+  { value: "pain", label: "Pain" },
+  { value: "modified", label: "Modified" },
+  { value: "missed", label: "Missed" },
+  { value: "fatigue", label: "Fatigue" },
+  { value: "time", label: "Time" },
+];
+const completionTypeLabels: Record<CompletionType, string> = {
+  lift: "Lift",
+  sprint: "Sprint",
+  cod: "COD / Agility",
+  plyo: "Plyo / Jump",
+  mobility: "Prep / Mobility",
+  generic: "Generic",
+};
 
 function getCompletionStatusLabel(status: ProgramCompletionStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -5230,11 +5276,60 @@ function getUnknownString(value: unknown): string {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
-function getPlannedWork(row: Record<string, unknown>): string {
-  return ["w1", "w2", "w3", "w4"]
-    .map((key) => getUnknownString(row[key]))
-    .filter(Boolean)
-    .join(" | ") || "Planned details not set";
+function normalizeSearchText(...values: string[]): string {
+  return values.filter(Boolean).join(" ").toLowerCase();
+}
+
+function getWeekLabel(weekIndex: number): string {
+  return `Week ${weekIndex + 1}`;
+}
+
+function hasPattern(value: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function capCompletionRows(value: number): number {
+  return Math.max(1, Math.min(value, 8));
+}
+
+function parsePlannedRowCount(plannedWork: string, completionType: CompletionType): number {
+  const text = plannedWork.toLowerCase();
+  const setMatch = text.match(/(\d+)\s*x/);
+  if (setMatch) return capCompletionRows(Number(setMatch[1]));
+
+  const rangeRepMatch = text.match(/(\d+)\s*-\s*(\d+)\s*(?:reps?|sprints?|runs?)/);
+  if (rangeRepMatch) return capCompletionRows(Number(rangeRepMatch[2]));
+
+  const singleRepMatch = text.match(/(\d+)\s*(?:reps?|sprints?|runs?)/);
+  if (singleRepMatch && (completionType === "sprint" || completionType === "cod")) {
+    return capCompletionRows(Number(singleRepMatch[1]));
+  }
+
+  const ladderMatch = text.match(/^\s*(\d+(?:\s*\/\s*\d+){1,})/);
+  if (ladderMatch) return capCompletionRows(ladderMatch[1].split("/").length);
+
+  const roundsMatch = text.match(/(\d+)\s*rounds?/);
+  if (roundsMatch && (completionType === "sprint" || completionType === "cod")) {
+    return capCompletionRows(Number(roundsMatch[1]));
+  }
+
+  return completionType === "lift" ? 3 : 1;
+}
+
+function inferCompletionType(exerciseName: string, sectionKey: PlannedExercise["sectionKey"], sectionName: string, plannedWork: string): CompletionType {
+  const text = normalizeSearchText(exerciseName, sectionKey, sectionName, plannedWork);
+
+  if (hasPattern(text, [/\b505\b/, /\bcod\b/, /change of direction/, /pro agility/, /shuttle/, /game speed cut/, /\bcut\b/])) return "cod";
+  if (hasPattern(text, [/\bsprint\b/, /acceleration/, /\bfly\b/, /flying sprint/, /\b10\s*y\b/, /\b20\s*y\b/, /\b40\s*y\b/])) return "sprint";
+  if (hasPattern(text, [/pogo/, /bound/, /\bhop\b/, /jump/, /landing/, /\bdrop\b/, /med ball/, /\bthrow\b/, /\bskip\b/, /plyo/])) return "plyo";
+  if (sectionKey === "prep" || hasPattern(text, [/stretch/, /mobility/, /activation/, /warm-?up/, /\bprep\b/, /breathing/, /tissue/, /foam roll/, /\biso hold\b/])) return "mobility";
+  if (sectionKey === "lift" || hasPattern(text, [/squat/, /deadlift/, /\bbench\b/, /\bpress\b/, /\brow\b/, /\brdl\b/, /lunge/, /hip thrust/, /\bclean\b/, /\bpull\b/, /trap bar/, /goblet/, /barbell/, /\bdb\b/, /\bkb\b/, /\bssb\b/, /curl/, /chin-up/])) return "lift";
+
+  return "generic";
+}
+
+function usesSideTimeInputs(exerciseName: string, plannedWork: string): boolean {
+  return hasPattern(normalizeSearchText(exerciseName, plannedWork), [/\b505\b/, /left/, /right/, /\/side/, /per side/, /\bside\b/]);
 }
 
 function getExerciseMatchKey(sessionIndex: number, exerciseId: string | undefined, exerciseName: string): string {
@@ -5245,32 +5340,234 @@ function getLogMatchKey(log: ProgramCompletionLog): string {
   return getExerciseMatchKey(log.sessionIndex, log.exerciseId, log.exerciseName);
 }
 
-function getCompletionDraftFromLog(log: ProgramCompletionLog | undefined): CompletionDraft {
-  const completedJson = getRecordValue(log?.completedJson);
+function getCompletedExerciseKey(log: ProgramCompletionLog): string {
+  return getUnknownString(getRecordValue(log.completedJson)?.exercise_key);
+}
+
+function getCompletionFlagFromLog(log: ProgramCompletionLog | undefined, completedJson: Record<string, unknown> | undefined): CompletionFlag {
+  const flag = getUnknownString(completedJson?.flag) as CompletionFlag;
+  if (completionFlagOptions.some((option) => option.value === flag)) return flag;
+  return log?.painFlag ? "pain" : "none";
+}
+
+function createEmptyCompletionSet(setIndex: number): CompletionSetDraft {
+  return {
+    setIndex,
+    load: "",
+    reps: "",
+    rpe: "",
+    vbtSpeed: "",
+    time: "",
+    leftTime: "",
+    rightTime: "",
+    distance: "",
+    height: "",
+    contacts: "",
+    duration: "",
+    notes: "",
+  };
+}
+
+function getCompletionSetsFromJson(completedJson: Record<string, unknown> | undefined, fallbackRows: number): CompletionSetDraft[] {
+  const rawSets = Array.isArray(completedJson?.sets) ? completedJson.sets : [];
+  const sets = rawSets
+    .map((value, index) => {
+      const set = getRecordValue(value);
+      if (!set) return null;
+
+      return {
+        ...createEmptyCompletionSet(index + 1),
+        setIndex: Number(set.set_index) || index + 1,
+        load: getUnknownString(set.load),
+        reps: getUnknownString(set.reps),
+        rpe: getUnknownString(set.rpe),
+        vbtSpeed: getUnknownString(set.vbt_speed),
+        time: getUnknownString(set.time),
+        leftTime: getUnknownString(set.left_time),
+        rightTime: getUnknownString(set.right_time),
+        distance: getUnknownString(set.distance),
+        height: getUnknownString(set.height),
+        contacts: getUnknownString(set.contacts),
+        duration: getUnknownString(set.duration),
+        notes: getUnknownString(set.notes),
+      };
+    })
+    .filter((set): set is CompletionSetDraft => Boolean(set));
+
+  if (sets.length) return sets;
+
+  const legacyLoad = getUnknownString(completedJson?.actualLoad);
+  const legacyReps = getUnknownString(completedJson?.actualReps);
+  if (legacyLoad || legacyReps) {
+    return [{ ...createEmptyCompletionSet(1), load: legacyLoad, reps: legacyReps }];
+  }
+
+  return Array.from({ length: fallbackRows }, (_, index) => createEmptyCompletionSet(index + 1));
+}
+
+function getCompletionDraftFromLog(log: ProgramCompletionLog | undefined, exercise: PlannedExercise): CompletionDraft {
+  const completedJson = getRecordValue(log?.completedJson) || undefined;
+  const mode = getUnknownString(completedJson?.mode) === "simple" ? "simple" : "detailed";
+  const fallbackRows = parsePlannedRowCount(exercise.plannedWork, exercise.completionType);
+  const sets = getCompletionSetsFromJson(completedJson, fallbackRows);
+
+  if (log?.rpe !== undefined && sets.length && !sets[0].rpe) {
+    sets[0] = { ...sets[0], rpe: String(log.rpe) };
+  }
+
   return {
     logId: log?.id,
-    actualLoad: getUnknownString(completedJson?.actualLoad),
-    actualReps: getUnknownString(completedJson?.actualReps),
-    rpe: log?.rpe === undefined ? "" : String(log.rpe),
+    mode,
     status: log?.status || "completed",
-    painFlag: log?.painFlag === true,
-    notes: log?.notes || "",
+    flag: getCompletionFlagFromLog(log, completedJson),
+    bestTime: getUnknownString(completedJson?.best_time),
+    summary: getUnknownString(completedJson?.summary),
+    notes: getUnknownString(completedJson?.notes) || log?.notes || "",
+    sets,
   };
 }
 
 function getCompletionLogForExercise(logs: ProgramCompletionLog[], exercise: PlannedExercise): ProgramCompletionLog | undefined {
-  return logs.find((log) => getLogMatchKey(log) === exercise.matchKey);
+  const exactLog = logs.find((log) => getCompletedExerciseKey(log) === exercise.key);
+  if (exactLog) return exactLog;
+
+  if (exercise.weekIndex > 0) return undefined;
+
+  const fallbackMatches = logs.filter((log) => !getCompletedExerciseKey(log) && getLogMatchKey(log) === exercise.matchKey);
+  return fallbackMatches.length === 1 ? fallbackMatches[0] : undefined;
 }
 
-function getPlannedExercises(programJson: Record<string, unknown>): PlannedExercise[] {
+function hasAmbiguousLegacyCompletionLogs(logs: ProgramCompletionLog[], exercises: PlannedExercise[]): boolean {
+  return exercises.some((exercise) => {
+    if (exercise.weekIndex > 0) return false;
+    return logs.filter((log) => !getCompletedExerciseKey(log) && getLogMatchKey(log) === exercise.matchKey).length > 1;
+  });
+}
+
+function getProgramWeekIndices(programJson: Record<string, unknown>): number[] {
   const days = Array.isArray(programJson.days) ? programJson.days : [];
+  const weekHasWork = [0, 1, 2, 3].map((weekIndex) => days.some((day) => {
+    const dayRecord = getRecordValue(day);
+    if (!dayRecord) return false;
+
+    return ["prep", "saq", "lift"].some((sectionKey) => {
+      const rows = Array.isArray(dayRecord[sectionKey]) ? dayRecord[sectionKey] : [];
+      return rows.some((row) => {
+        const rowRecord = getRecordValue(row);
+        return rowRecord && getUnknownString(rowRecord.name) && getUnknownString(rowRecord[`w${weekIndex + 1}`]);
+      });
+    });
+  }));
+
+  const weekIndices = weekHasWork
+    .map((hasWork, index) => hasWork ? index : -1)
+    .filter((index) => index >= 0);
+
+  return weekIndices.length ? weekIndices : [0];
+}
+
+function slugCompletionKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "exercise";
+}
+
+function getStableExerciseKey(assignmentId: string, weekIndex: number, dayIndex: number, sectionKey: string, exerciseIndex: number, exerciseName: string): string {
+  return `${assignmentId}:w${weekIndex + 1}:d${dayIndex + 1}:${sectionKey}:${exerciseIndex + 1}:${slugCompletionKey(exerciseName)}`;
+}
+
+function getFirstRpeValue(draft: CompletionDraft): number | undefined {
+  const rpe = draft.sets
+    .map((set) => Number(set.rpe))
+    .find((value) => Number.isFinite(value));
+
+  return rpe === undefined ? undefined : rpe;
+}
+
+function nullableString(value: string): string | null {
+  return value.trim() || null;
+}
+
+function getBestTimeFromDraft(draft: CompletionDraft): string {
+  const enteredBestTime = draft.bestTime.trim();
+  if (enteredBestTime) return enteredBestTime;
+
+  const times = draft.sets
+    .flatMap((set) => [set.time, set.leftTime, set.rightTime])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  return times.length ? String(Math.min(...times)) : "";
+}
+
+function buildCompletedJson(exercise: PlannedExercise, draft: CompletionDraft): Record<string, unknown> {
+  const sets = draft.sets.map((set, index) => ({
+    set_index: index + 1,
+    load: nullableString(set.load),
+    reps: nullableString(set.reps),
+    rpe: nullableString(set.rpe),
+    vbt_speed: nullableString(set.vbtSpeed),
+    time: nullableString(set.time),
+    left_time: nullableString(set.leftTime),
+    right_time: nullableString(set.rightTime),
+    distance: nullableString(set.distance),
+    height: nullableString(set.height),
+    contacts: nullableString(set.contacts),
+    duration: nullableString(set.duration),
+    notes: nullableString(set.notes),
+  }));
+
+  return {
+    mode: draft.mode,
+    completion_type: exercise.completionType,
+    week_index: exercise.weekIndex,
+    day_index: exercise.dayIndex,
+    session_index: exercise.sessionIndex,
+    exercise_key: exercise.key,
+    sets,
+    best_time: nullableString(getBestTimeFromDraft(draft)),
+    summary: nullableString(draft.summary),
+    notes: nullableString(draft.notes),
+    flag: draft.flag,
+    actualLoad: sets[0]?.load || null,
+    actualReps: sets[0]?.reps || null,
+  };
+}
+
+function mergeCompletionLogs(currentLogs: ProgramCompletionLog[], savedLogs: ProgramCompletionLog[]): ProgramCompletionLog[] {
+  const logsById = new Map(currentLogs.map((log) => [log.id, log]));
+  savedLogs.forEach((log) => logsById.set(log.id, log));
+
+  return Array.from(logsById.values()).sort((a, b) => {
+    if (a.sessionIndex !== b.sessionIndex) return a.sessionIndex - b.sessionIndex;
+    return a.exerciseName.localeCompare(b.exerciseName);
+  });
+}
+
+function getReadableCompletedSetParts(set: CompletionSetDraft): string[] {
+  return [
+    set.load ? `Load ${set.load}` : "",
+    set.reps ? `Reps ${set.reps}` : "",
+    set.rpe ? `RPE ${set.rpe}` : "",
+    set.vbtSpeed ? `VBT ${set.vbtSpeed} m/s` : "",
+    set.time ? `Time ${set.time}s` : "",
+    set.leftTime ? `L ${set.leftTime}s` : "",
+    set.rightTime ? `R ${set.rightTime}s` : "",
+    set.distance ? `Distance ${set.distance}` : "",
+    set.height ? `Height ${set.height}` : "",
+    set.contacts ? `Contacts ${set.contacts}` : "",
+    set.duration ? `Duration ${set.duration}` : "",
+  ].filter(Boolean);
+}
+
+function getPlannedExercises(assignmentId: string, programJson: Record<string, unknown>): PlannedExercise[] {
+  const days = Array.isArray(programJson.days) ? programJson.days : [];
+  const weekIndices = getProgramWeekIndices(programJson);
   const sections = [
     ["prep", "Prep"],
     ["saq", "SAQ"],
     ["lift", "Lift"],
   ] as const;
 
-  return days.flatMap((day, dayIndex) => {
+  return weekIndices.flatMap((weekIndex) => days.flatMap((day, dayIndex) => {
     const dayRecord = getRecordValue(day);
     if (!dayRecord) return [];
 
@@ -5288,28 +5585,45 @@ function getPlannedExercises(programJson: Record<string, unknown>): PlannedExerc
         if (!exerciseName) return [];
 
         const exerciseId = getUnknownString(rowRecord.id) || undefined;
+        const plannedWork = getUnknownString(rowRecord[`w${weekIndex + 1}`]) || "Planned details not set";
+        const completionType = inferCompletionType(exerciseName, sectionKey, sectionName, plannedWork);
+        const key = getStableExerciseKey(assignmentId, weekIndex, dayIndex, sectionKey, rowIndex, exerciseName);
         const plannedJson = {
+          weekIndex,
+          weekName: getWeekLabel(weekIndex),
+          dayIndex,
           sessionIndex,
           sessionName,
+          sectionKey,
           sectionName,
+          exerciseIndex: rowIndex,
+          exerciseKey: key,
+          plannedPrescription: plannedWork,
           ...rowRecord,
         };
         const matchKey = getExerciseMatchKey(sessionIndex, exerciseId, exerciseName);
 
         return [{
-          key: `${sessionIndex}:${sectionKey}:${exerciseId || rowIndex}:${exerciseName}`,
+          key,
           matchKey,
+          weekIndex,
+          dayIndex,
           sessionIndex,
           sessionName,
+          sectionKey,
           sectionName,
+          exerciseIndex: rowIndex,
           exerciseId,
           exerciseName,
           plannedJson,
-          plannedWork: getPlannedWork(rowRecord),
+          plannedWork,
+          completionType,
+          suggestedRows: parsePlannedRowCount(plannedWork, completionType),
+          usesSideTimes: completionType === "cod" && usesSideTimeInputs(exerciseName, plannedWork),
         }];
       });
     });
-  });
+  }));
 }
 
 function AssignmentDetailModal({
@@ -5324,20 +5638,26 @@ function AssignmentDetailModal({
   onAssignmentUpdated: (assignment: ProgramAssignment) => void;
 }) {
   const [activeTab, setActiveTab] = useState<AssignmentDetailTab>("planned");
+  const [activeWeekIndex, setActiveWeekIndex] = useState(0);
   const [completionLogs, setCompletionLogs] = useState<ProgramCompletionLog[]>([]);
   const [completionDrafts, setCompletionDrafts] = useState<Record<string, CompletionDraft>>({});
+  const [expandedExerciseKeys, setExpandedExerciseKeys] = useState<Record<string, boolean>>({});
   const [completionStatus, setCompletionStatus] = useState("");
   const [isSavingCompletion, setIsSavingCompletion] = useState(false);
-  const plannedExercises = useMemo(() => getPlannedExercises(assignment.programJson), [assignment.programJson]);
+  const plannedExercises = useMemo(() => getPlannedExercises(assignment.id, assignment.programJson), [assignment.id, assignment.programJson]);
+  const plannedWeekIndices = useMemo(() => Array.from(new Set(plannedExercises.map((exercise) => exercise.weekIndex))), [plannedExercises]);
+  const selectedWeekIndex = plannedWeekIndices.includes(activeWeekIndex) ? activeWeekIndex : plannedWeekIndices[0] || 0;
+  const visibleWeekExercises = plannedExercises.filter((exercise) => exercise.weekIndex === selectedWeekIndex);
   const loggedExerciseCount = plannedExercises.filter((exercise) => getCompletionLogForExercise(completionLogs, exercise)).length;
   const allPlannedExercisesLogged = plannedExercises.length > 0 && loggedExerciseCount === plannedExercises.length;
   const canSaveCompletion = Boolean(authSession && supabaseConfig.isConfigured);
+  const hasAmbiguousLegacyLogs = hasAmbiguousLegacyCompletionLogs(completionLogs, plannedExercises);
   const displayedCompletionStatus = !canSaveCompletion
     ? "Sign in with Supabase enabled to save digital completion logs."
     : completionStatus;
 
   function getDraftForExercise(exercise: PlannedExercise): CompletionDraft {
-    return completionDrafts[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise));
+    return completionDrafts[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise), exercise);
   }
 
   useEffect(() => {
@@ -5365,14 +5685,140 @@ function AssignmentDetailModal({
     };
   }, [assignment.id, authSession]);
 
+  async function updateAssignmentInProgressIfNeeded(): Promise<void> {
+    if (!authSession || !(assignment.status === "draft" || assignment.status === "assigned")) return;
+
+    const updatedAssignment = await updateProgramAssignment(authSession, assignment.id, { status: "in_progress" });
+    onAssignmentUpdated({
+      ...updatedAssignment,
+      athleteId: assignment.athleteId,
+      cloudAthleteId: assignment.cloudAthleteId || updatedAssignment.athleteId,
+    });
+  }
+
   function updateCompletionDraft(exercise: PlannedExercise, updates: Partial<CompletionDraft>): void {
     setCompletionDrafts((current) => ({
       ...current,
       [exercise.key]: {
-        ...(current[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise))),
+        ...(current[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise), exercise)),
+        mode: "detailed",
         ...updates,
       },
     }));
+  }
+
+  function updateCompletionSet(exercise: PlannedExercise, setIndex: number, updates: Partial<CompletionSetDraft>): void {
+    const draft = getDraftForExercise(exercise);
+    const sets = draft.sets.length ? draft.sets : Array.from({ length: exercise.suggestedRows }, (_, index) => createEmptyCompletionSet(index + 1));
+
+    updateCompletionDraft(exercise, {
+      sets: sets.map((set, index) => index === setIndex ? { ...set, ...updates } : set),
+    });
+  }
+
+  function addCompletionSet(exercise: PlannedExercise): void {
+    const draft = getDraftForExercise(exercise);
+    updateCompletionDraft(exercise, {
+      sets: [...draft.sets, createEmptyCompletionSet(draft.sets.length + 1)],
+    });
+  }
+
+  function removeCompletionSet(exercise: PlannedExercise, setIndex: number): void {
+    const draft = getDraftForExercise(exercise);
+    const nextSets = draft.sets
+      .filter((_, index) => index !== setIndex)
+      .map((set, index) => ({ ...set, setIndex: index + 1 }));
+
+    updateCompletionDraft(exercise, {
+      sets: nextSets.length ? nextSets : [createEmptyCompletionSet(1)],
+    });
+  }
+
+  function toggleExerciseDetails(exercise: PlannedExercise): void {
+    const isOpening = !expandedExerciseKeys[exercise.key];
+    setExpandedExerciseKeys((current) => ({
+      ...current,
+      [exercise.key]: isOpening,
+    }));
+    if (isOpening) {
+      setCompletionDrafts((current) => ({
+        ...current,
+        [exercise.key]: current[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise), exercise),
+      }));
+    }
+  }
+
+  async function saveExerciseCompletion(exercise: PlannedExercise, draftOverride?: CompletionDraft): Promise<ProgramCompletionLog | null> {
+    if (!authSession || !supabaseConfig.isConfigured) {
+      setCompletionStatus("Sign in with Supabase enabled to save completion logs.");
+      return null;
+    }
+
+    const draft = draftOverride || getDraftForExercise(exercise);
+    const existingLog = draft.logId
+      ? completionLogs.find((log) => log.id === draft.logId)
+      : getCompletionLogForExercise(completionLogs, exercise);
+    const completedAt = new Date().toISOString();
+    const completedJson = buildCompletedJson(exercise, draft);
+    const rpeValue = getFirstRpeValue(draft);
+    const input = {
+      sessionIndex: exercise.sessionIndex,
+      sessionName: `${getWeekLabel(exercise.weekIndex)} · ${exercise.sessionName}`,
+      exerciseId: exercise.exerciseId,
+      exerciseName: exercise.exerciseName,
+      plannedJson: exercise.plannedJson,
+      completedJson,
+      status: draft.status,
+      rpe: rpeValue,
+      painFlag: draft.flag === "pain",
+      notes: draft.notes,
+      completedAt,
+    };
+
+    const savedLog = existingLog
+      ? await updateProgramCompletionLog(authSession, existingLog.id, input)
+      : await createProgramCompletionLog(authSession, {
+        assignmentId: assignment.id,
+        athleteId: assignment.cloudAthleteId || assignment.athleteId,
+        ...input,
+      });
+
+    setCompletionLogs((current) => mergeCompletionLogs(current, [savedLog]));
+    setCompletionDrafts((current) => ({
+      ...current,
+      [exercise.key]: {
+        ...draft,
+        logId: savedLog.id,
+      },
+    }));
+    await updateAssignmentInProgressIfNeeded();
+
+    return savedLog;
+  }
+
+  async function quickSaveExercise(exercise: PlannedExercise, status: ProgramCompletionStatus): Promise<void> {
+    const draft = {
+      ...getDraftForExercise(exercise),
+      mode: "simple" as CompletionMode,
+      status,
+      flag: status === "modified" ? "modified" as CompletionFlag : status === "missed" ? "missed" as CompletionFlag : "none" as CompletionFlag,
+      summary: status === "completed" ? "Completed as prescribed." : getCompletionStatusLabel(status),
+      notes: "",
+    };
+
+    setIsSavingCompletion(true);
+    setCompletionStatus(`Saving ${exercise.exerciseName}...`);
+
+    try {
+      await saveExerciseCompletion(exercise, draft);
+      setCompletionStatus(`${exercise.exerciseName} marked ${getCompletionStatusLabel(status).toLowerCase()}.`);
+    } catch (error) {
+      setCompletionStatus(isMissingProgramAssignmentFoundationError(error)
+        ? "Completion logs need the program assignment foundation migration before they can sync."
+        : `Could not save ${exercise.exerciseName}: ${error instanceof Error ? error.message : "Unknown error."}`);
+    } finally {
+      setIsSavingCompletion(false);
+    }
   }
 
   async function saveCompletion(): Promise<void> {
@@ -5381,69 +5827,21 @@ function AssignmentDetailModal({
       return;
     }
 
-    if (!plannedExercises.length) {
-      setCompletionStatus("No recognizable planned exercises were found for this assignment.");
+    const draftedExercises = plannedExercises.filter((exercise) => completionDrafts[exercise.key]);
+
+    if (!draftedExercises.length) {
+      setCompletionStatus("No entered completion details to save. Use Complete for simple work, or open Log Details and enter actuals first.");
       return;
     }
 
     setIsSavingCompletion(true);
-    setCompletionStatus("Saving completion logs...");
+    setCompletionStatus("Saving entered completion details...");
 
     try {
-      const savedLogs = await Promise.all(plannedExercises.map((exercise) => {
-        const draft = getDraftForExercise(exercise);
-        const existingLog = draft.logId
-          ? completionLogs.find((log) => log.id === draft.logId)
-          : getCompletionLogForExercise(completionLogs, exercise);
-        const rpeValue = draft.rpe.trim() ? Number(draft.rpe) : undefined;
-        const completedJson = {
-          actualLoad: draft.actualLoad.trim(),
-          actualReps: draft.actualReps.trim(),
-        };
+      const savedLogs = (await Promise.all(draftedExercises.map((exercise) => saveExerciseCompletion(exercise))))
+        .filter((log): log is ProgramCompletionLog => Boolean(log));
 
-        if (existingLog) {
-          return updateProgramCompletionLog(authSession, existingLog.id, {
-            sessionIndex: exercise.sessionIndex,
-            sessionName: exercise.sessionName,
-            exerciseId: exercise.exerciseId,
-            exerciseName: exercise.exerciseName,
-            plannedJson: exercise.plannedJson,
-            completedJson,
-            status: draft.status,
-            rpe: Number.isFinite(rpeValue) ? rpeValue : undefined,
-            painFlag: draft.painFlag,
-            notes: draft.notes,
-            completedAt: new Date().toISOString(),
-          });
-        }
-
-        return createProgramCompletionLog(authSession, {
-          assignmentId: assignment.id,
-          athleteId: assignment.cloudAthleteId || assignment.athleteId,
-          sessionIndex: exercise.sessionIndex,
-          sessionName: exercise.sessionName,
-          exerciseId: exercise.exerciseId,
-          exerciseName: exercise.exerciseName,
-          plannedJson: exercise.plannedJson,
-          completedJson,
-          status: draft.status,
-          rpe: Number.isFinite(rpeValue) ? rpeValue : undefined,
-          painFlag: draft.painFlag,
-          notes: draft.notes,
-          completedAt: new Date().toISOString(),
-        });
-      }));
-
-      setCompletionLogs(savedLogs);
-
-      if (assignment.status === "draft" || assignment.status === "assigned") {
-        const updatedAssignment = await updateProgramAssignment(authSession, assignment.id, { status: "in_progress" });
-        onAssignmentUpdated({
-          ...updatedAssignment,
-          athleteId: assignment.athleteId,
-          cloudAthleteId: assignment.cloudAthleteId || updatedAssignment.athleteId,
-        });
-      }
+      setCompletionLogs((current) => mergeCompletionLogs(current, savedLogs));
 
       setCompletionStatus(`Saved ${savedLogs.length} completion ${savedLogs.length === 1 ? "log" : "logs"}.`);
       setActiveTab("review");
@@ -5487,6 +5885,200 @@ function AssignmentDetailModal({
     }
   }
 
+  const visibleExercisesByDay = Array.from(visibleWeekExercises.reduce((groups, exercise) => {
+    const key = `${exercise.weekIndex}:${exercise.dayIndex}`;
+    const existingGroup = groups.get(key) || {
+      key,
+      title: exercise.sessionName,
+      exercises: [] as PlannedExercise[],
+    };
+    existingGroup.exercises.push(exercise);
+    groups.set(key, existingGroup);
+    return groups;
+  }, new Map<string, { key: string; title: string; exercises: PlannedExercise[] }>()).values());
+
+  function renderWeekTabs(): ReactNode {
+    if (plannedWeekIndices.length <= 1) return null;
+
+    return (
+      <div className="mt-5 flex flex-wrap gap-2">
+        {plannedWeekIndices.map((weekIndex) => (
+          <button
+            key={weekIndex}
+            type="button"
+            onClick={() => setActiveWeekIndex(weekIndex)}
+            className={`rounded-xl px-4 py-2 text-xs font-black ${selectedWeekIndex === weekIndex ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          >
+            {getWeekLabel(weekIndex)}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  function renderCompletionSetFields(exercise: PlannedExercise, draft: CompletionDraft, set: CompletionSetDraft, setIndex: number): ReactNode {
+    const updateSet = (updates: Partial<CompletionSetDraft>) => updateCompletionSet(exercise, setIndex, updates);
+    const removeButton = draft.sets.length > 1 ? (
+      <button type="button" onClick={() => removeCompletionSet(exercise, setIndex)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-200">
+        Remove
+      </button>
+    ) : null;
+
+    if (exercise.completionType === "sprint") {
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Rep Time (sec)
+            <input value={set.time} onChange={(event) => updateSet({ time: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 1.82" />
+          </label>
+          {removeButton}
+        </div>
+      );
+    }
+
+    if (exercise.completionType === "cod") {
+      return (
+        <div className={`grid gap-3 ${exercise.usesSideTimes ? "md:grid-cols-[1fr_1fr_auto]" : "md:grid-cols-[1fr_auto]"} md:items-end`}>
+          {exercise.usesSideTimes ? (
+            <>
+              <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Left Time (sec)
+                <input value={set.leftTime} onChange={(event) => updateSet({ leftTime: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 2.31" />
+              </label>
+              <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Right Time (sec)
+                <input value={set.rightTime} onChange={(event) => updateSet({ rightTime: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 2.28" />
+              </label>
+            </>
+          ) : (
+            <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Rep Time (sec)
+              <input value={set.time} onChange={(event) => updateSet({ time: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 4.72" />
+            </label>
+          )}
+          {removeButton}
+        </div>
+      );
+    }
+
+    if (exercise.completionType === "plyo") {
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Reps / Contacts
+            <input value={set.contacts || set.reps} onChange={(event) => updateSet({ contacts: event.target.value, reps: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 20 contacts" />
+          </label>
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Distance
+            <input value={set.distance} onChange={(event) => updateSet({ distance: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="optional" />
+          </label>
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Height
+            <input value={set.height} onChange={(event) => updateSet({ height: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="optional" />
+          </label>
+          {removeButton}
+        </div>
+      );
+    }
+
+    if (exercise.completionType === "mobility") {
+      return (
+        <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Duration
+            <input value={set.duration} onChange={(event) => updateSet({ duration: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 2 min" />
+          </label>
+          {removeButton}
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid gap-3 md:grid-cols-[1fr_1fr_0.7fr_0.8fr_auto] md:items-end">
+        <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+          Load
+          <input value={set.load} onChange={(event) => updateSet({ load: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 185 lb" />
+        </label>
+        <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+          Reps
+          <input value={set.reps} onChange={(event) => updateSet({ reps: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 5" />
+        </label>
+        <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+          RPE
+          <input type="number" min="0" max="10" step="0.5" value={set.rpe} onChange={(event) => updateSet({ rpe: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="optional" />
+        </label>
+        <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+          VBT Speed
+          <input value={set.vbtSpeed} onChange={(event) => updateSet({ vbtSpeed: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="m/s" />
+        </label>
+        {removeButton}
+      </div>
+    );
+  }
+
+  function renderExerciseDetails(exercise: PlannedExercise, draft: CompletionDraft): ReactNode {
+    const rowLabel = exercise.completionType === "sprint" || exercise.completionType === "cod" ? "Add Rep" : exercise.completionType === "mobility" ? "Add Detail Row" : "Add Set";
+
+    return (
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Status
+            <select value={draft.status} onChange={(event) => updateCompletionDraft(exercise, { status: event.target.value as ProgramCompletionStatus })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-black normal-case tracking-normal text-slate-700">
+              {completionStatusOptions.map((status) => (
+                <option key={status} value={status}>{getCompletionStatusLabel(status)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Flag
+            <select value={draft.flag} onChange={(event) => updateCompletionDraft(exercise, { flag: event.target.value as CompletionFlag })} className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-black normal-case tracking-normal text-slate-700">
+              {completionFlagOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          {(exercise.completionType === "sprint" || exercise.completionType === "cod") ? (
+            <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Best Time
+              <input value={draft.bestTime} onChange={(event) => updateCompletionDraft(exercise, { bestTime: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="optional / auto" />
+            </label>
+          ) : (
+            <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Summary
+              <input value={draft.summary} onChange={(event) => updateCompletionDraft(exercise, { summary: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="optional" />
+            </label>
+          )}
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          {draft.sets.map((set, setIndex) => (
+            <div key={`${exercise.key}-set-${setIndex}`} className="rounded-2xl border border-slate-200 bg-white p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                  {exercise.completionType === "sprint" || exercise.completionType === "cod" ? `Rep ${setIndex + 1}` : `Set ${setIndex + 1}`}
+                </p>
+              </div>
+              {renderCompletionSetFields(exercise, draft, set, setIndex)}
+              <label className="mt-3 block text-xs font-black uppercase tracking-wide text-slate-500">
+                Row Notes
+                <input value={set.notes} onChange={(event) => updateCompletionSet(exercise, setIndex, { notes: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="optional" />
+              </label>
+            </div>
+          ))}
+          <button type="button" onClick={() => addCompletionSet(exercise)} className="rounded-xl border border-dashed border-slate-300 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-100">
+            {rowLabel}
+          </button>
+        </div>
+
+        <label className="mt-4 block text-xs font-black uppercase tracking-wide text-slate-500">
+          Notes
+          <textarea value={draft.notes} onChange={(event) => updateCompletionDraft(exercise, { notes: event.target.value })} className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="Context, modifications, time constraints, or anything the coach wants to remember" />
+        </label>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
       <section className="max-h-[90vh] w-full max-w-6xl overflow-auto rounded-3xl bg-white p-6 shadow-xl">
@@ -5517,6 +6109,11 @@ function AssignmentDetailModal({
         </div>
 
         {displayedCompletionStatus ? <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700">{displayedCompletionStatus}</p> : null}
+        {hasAmbiguousLegacyLogs ? (
+          <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+            Some older completion logs have duplicate exercise matches. New saves use a stable exercise key; review ambiguous older rows before editing them.
+          </p>
+        ) : null}
 
         {activeTab === "planned" ? (
           <div className="mt-5 grid gap-4">
@@ -5526,16 +6123,25 @@ function AssignmentDetailModal({
                 <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-700">{assignment.coachNotes}</p>
               </div>
             ) : null}
+            {renderWeekTabs()}
             {plannedExercises.length ? (
-              <div className="grid gap-3">
-                {plannedExercises.map((exercise) => (
-                  <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="font-black text-slate-950">{exercise.exerciseName}</p>
-                        <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sessionName} · {exercise.sectionName}</p>
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{exercise.plannedWork}</span>
+              <div className="grid gap-4">
+                {visibleExercisesByDay.map((group) => (
+                  <div key={`planned-${group.key}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">{getWeekLabel(selectedWeekIndex)}</p>
+                    <h3 className="mt-1 text-lg font-black text-slate-950">{group.title}</h3>
+                    <div className="mt-3 grid gap-3">
+                      {group.exercises.map((exercise) => (
+                        <div key={exercise.key} className="rounded-2xl bg-slate-50 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="font-black text-slate-950">{exercise.exerciseName}</p>
+                              <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sectionName} · {completionTypeLabels[exercise.completionType]}</p>
+                            </div>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{exercise.plannedWork}</span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
@@ -5559,54 +6165,57 @@ function AssignmentDetailModal({
                 Sign in with Supabase configured to save completion logs. You can still review the planned program here.
               </div>
             ) : null}
+            {renderWeekTabs()}
             {plannedExercises.length ? (
               <>
-                <div className="grid gap-3">
-                  {plannedExercises.map((exercise) => {
-                    const draft = getDraftForExercise(exercise);
+                <div className="grid gap-4">
+                  {visibleExercisesByDay.map((group) => (
+                    <div key={`complete-${group.key}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{getWeekLabel(selectedWeekIndex)}</p>
+                      <h3 className="mt-1 text-lg font-black text-slate-950">{group.title}</h3>
+                      <div className="mt-4 grid gap-3">
+                        {group.exercises.map((exercise) => {
+                          const draft = getDraftForExercise(exercise);
+                          const existingLog = getCompletionLogForExercise(completionLogs, exercise);
+                          const isDetailsOpen = expandedExerciseKeys[exercise.key];
 
-                    return (
-                      <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                          <div>
-                            <p className="font-black text-slate-950">{exercise.exerciseName}</p>
-                            <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sessionName} · {exercise.sectionName} · Planned: {exercise.plannedWork}</p>
-                          </div>
-                          <select value={draft.status} onChange={(event) => updateCompletionDraft(exercise, { status: event.target.value as ProgramCompletionStatus })} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700">
-                            {completionStatusOptions.map((status) => (
-                              <option key={status} value={status}>{getCompletionStatusLabel(status)}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_0.7fr_auto] md:items-end">
-                          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
-                            Actual Load
-                            <input value={draft.actualLoad} onChange={(event) => updateCompletionDraft(exercise, { actualLoad: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 185 lb" />
-                          </label>
-                          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
-                            Actual Reps
-                            <input value={draft.actualReps} onChange={(event) => updateCompletionDraft(exercise, { actualReps: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="e.g. 3x5" />
-                          </label>
-                          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
-                            RPE
-                            <input type="number" min="0" max="10" step="0.5" value={draft.rpe} onChange={(event) => updateCompletionDraft(exercise, { rpe: event.target.value })} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="0-10" />
-                          </label>
-                          <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-3 text-xs font-black uppercase tracking-wide text-slate-600">
-                            <input type="checkbox" checked={draft.painFlag} onChange={(event) => updateCompletionDraft(exercise, { painFlag: event.target.checked })} />
-                            Pain
-                          </label>
-                        </div>
-                        <label className="mt-3 block text-xs font-black uppercase tracking-wide text-slate-500">
-                          Notes
-                          <textarea value={draft.notes} onChange={(event) => updateCompletionDraft(exercise, { notes: event.target.value })} className="mt-1 min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" placeholder="Coach notes, modification reason, or context" />
-                        </label>
+                          return (
+                            <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-black text-slate-950">{exercise.exerciseName}</p>
+                                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{completionTypeLabels[exercise.completionType]}</span>
+                                    {existingLog ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Logged</span> : null}
+                                  </div>
+                                  <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sectionName} · Planned: {exercise.plannedWork}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void quickSaveExercise(exercise, "completed")} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-50">
+                                    Complete
+                                  </button>
+                                  <button type="button" onClick={() => toggleExerciseDetails(exercise)} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                                    {isDetailsOpen ? "Hide Details" : "Log Details"}
+                                  </button>
+                                  <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void quickSaveExercise(exercise, "modified")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50">
+                                    Modified
+                                  </button>
+                                  <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void quickSaveExercise(exercise, "missed")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50">
+                                    Missed
+                                  </button>
+                                </div>
+                              </div>
+                              {isDetailsOpen ? renderExerciseDetails(exercise, draft) : null}
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button disabled={isSavingCompletion || !canSaveCompletion} onClick={() => void saveCompletion()} className="rounded-xl bg-[#1e94d2] px-4 py-3 text-sm font-black text-white hover:bg-[#167bb0] disabled:opacity-50">
-                    {isSavingCompletion ? "Saving..." : "Save Completion"}
+                    {isSavingCompletion ? "Saving..." : "Save Entered Details"}
                   </button>
                   <button disabled={isSavingCompletion || !canSaveCompletion || !allPlannedExercisesLogged || assignment.status === "completed"} onClick={() => void markAssignmentCompleted()} className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-40">
                     Mark Assignment Completed
@@ -5623,35 +6232,70 @@ function AssignmentDetailModal({
         ) : null}
 
         {activeTab === "review" ? (
-          <div className="mt-5 grid gap-3">
-            {plannedExercises.length ? plannedExercises.map((exercise) => {
-              const draft = getDraftForExercise(exercise);
+          <div className="mt-5 grid gap-4">
+            {renderWeekTabs()}
+            {plannedExercises.length ? visibleExercisesByDay.map((group) => (
+              <div key={`review-${group.key}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-500">{getWeekLabel(selectedWeekIndex)}</p>
+                <h3 className="mt-1 text-lg font-black text-slate-950">{group.title}</h3>
+                <div className="mt-4 grid gap-3">
+                  {group.exercises.map((exercise) => {
+                    const draft = getDraftForExercise(exercise);
+                    const existingLog = getCompletionLogForExercise(completionLogs, exercise);
+                    const hasDraft = Boolean(completionDrafts[exercise.key]);
+                    const hasCompletion = Boolean(existingLog || hasDraft);
+                    const setRows = draft.sets
+                      .map((set, index) => ({
+                        index,
+                        parts: getReadableCompletedSetParts(set),
+                        notes: set.notes,
+                      }))
+                      .filter((row) => row.parts.length || row.notes);
 
-              return (
-                <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <p className="font-black text-slate-950">{exercise.exerciseName}</p>
-                      <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sessionName} · {exercise.sectionName}</p>
-                    </div>
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{getCompletionStatusLabel(draft.status)}</span>
-                  </div>
-                  <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
-                    <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Planned</p><p className="mt-1 font-bold text-slate-800">{exercise.plannedWork}</p></div>
-                    <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Completed</p><p className="mt-1 font-bold text-slate-800">{[draft.actualLoad, draft.actualReps].filter(Boolean).join(" · ") || "Not entered"}</p></div>
-                    <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">RPE / Pain</p><p className="mt-1 font-bold text-slate-800">{draft.rpe || "No RPE"} · {draft.painFlag ? "Pain flagged" : "No pain flag"}</p></div>
-                  </div>
-                  {draft.notes ? <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-600">{draft.notes}</p> : null}
+                    return (
+                      <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <p className="font-black text-slate-950">{exercise.exerciseName}</p>
+                            <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sectionName} · {completionTypeLabels[exercise.completionType]}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{hasCompletion ? getCompletionStatusLabel(draft.status) : "Not logged"}</span>
+                            {hasCompletion ? <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{draft.mode === "simple" ? "Simple Complete" : "Detailed Log"}</span> : null}
+                            {draft.flag !== "none" && hasCompletion ? <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">Flag: {completionFlagOptions.find((option) => option.value === draft.flag)?.label}</span> : null}
+                          </div>
+                        </div>
+                        <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+                          <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Planned</p><p className="mt-1 font-bold text-slate-800">{exercise.plannedWork}</p></div>
+                          <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Best / Summary</p><p className="mt-1 font-bold text-slate-800">{hasCompletion ? draft.bestTime || draft.summary || "Completed as logged" : "No completion saved"}</p></div>
+                          <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Notes</p><p className="mt-1 whitespace-pre-wrap font-bold text-slate-800">{hasCompletion ? draft.notes || "No notes" : "No notes"}</p></div>
+                        </div>
+                        {hasCompletion && setRows.length ? (
+                          <div className="mt-3 grid gap-2">
+                            {setRows.map((row) => (
+                              <div key={`${exercise.key}-review-${row.index}`} className="rounded-xl bg-white p-3 text-sm">
+                                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                                  {exercise.completionType === "sprint" || exercise.completionType === "cod" ? `Rep ${row.index + 1}` : `Set ${row.index + 1}`}
+                                </p>
+                                <p className="mt-1 font-bold text-slate-800">{row.parts.join(" · ") || "No actuals entered"}</p>
+                                {row.notes ? <p className="mt-1 text-xs font-semibold text-slate-500">{row.notes}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            }) : (
+              </div>
+            )) : (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
                 No planned exercises are available for Planned vs Completed review.
               </div>
             )}
             {plannedExercises.length && !completionLogs.length ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-bold text-slate-500">
-                No completion logs saved yet.
+                No completion logs saved yet. Use Complete for simple work, or open Log Details to enter set-by-set actuals.
               </div>
             ) : null}
           </div>
