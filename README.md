@@ -57,7 +57,7 @@ VITE_PEAQ_ACCESS_SAVE_PROGRAMS=true
 
 ### Assigned Program History
 
-PEAQ Profile owns the athlete-side Program History for this MVP. When PEAQ Build is opened from a profile report, saved Draft/Assigned programs are sent back to the Profile window and attached to the athlete history. Supabase persistence uses `supabase/migrations/006_saved_program_history.sql` and `007_fix_assigned_programs_upsert_index.sql`; if that table has not been deployed yet, the app safely falls back to local workspace storage. Reusable PEAQ Build templates use `supabase/migrations/008_program_templates.sql`.
+PEAQ Profile owns the athlete-side Program History for this MVP. When PEAQ Build is opened from a profile report, saved Draft/Assigned programs are sent back to the Profile window and attached to the athlete history. Supabase persistence uses `supabase/migrations/006_saved_program_history.sql` and `007_fix_assigned_programs_upsert_index.sql`; if that table has not been deployed yet, the app safely falls back to local workspace storage. Reusable PEAQ Build templates use `supabase/migrations/008_program_templates.sql`. Athlete-specific assignment history and the digital completion foundation use `supabase/migrations/009_program_assignment_foundation.sql`.
 
 Future completed-work uploads and handwriting/OCR extraction are intentionally not active yet. See `docs/program-history-mvp.md` for the planned data path.
 
