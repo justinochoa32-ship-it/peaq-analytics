@@ -4373,7 +4373,7 @@ async function saveCoachToSupabase(coach: CoachWorkspace, session: SupabaseSessi
       coach_id: session.user.id,
       athlete_id: cloudAthleteId,
       template_id: assignment.templateId || null,
-      assignment_name: assignment.assignmentName || "Untitled Assignment",
+      assignment_name: getAssignmentDisplayName(assignment),
       phase_name: assignment.phaseName || null,
       weekly_structure: assignment.weeklyStructure,
       start_date: assignment.startDate || null,
@@ -5200,6 +5200,8 @@ type CompletionMode = "simple" | "detailed";
 
 type CompletionFlag = "none" | "pain" | "modified" | "missed" | "fatigue" | "time";
 
+type CompletionSaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+
 type PlannedExercise = {
   key: string;
   matchKey: string;
@@ -5241,6 +5243,7 @@ type CompletionDraft = {
   status: ProgramCompletionStatus;
   flag: CompletionFlag;
   bestTime: string;
+  completedDate: string;
   summary: string;
   notes: string;
   sets: CompletionSetDraft[];
@@ -5278,6 +5281,57 @@ function getUnknownString(value: unknown): string {
 
 function normalizeSearchText(...values: string[]): string {
   return values.filter(Boolean).join(" ").toLowerCase();
+}
+
+function isUntitledProgramName(value: string): boolean {
+  return /^(untitled|untitled program|untitled assignment)$/i.test(value.trim());
+}
+
+function getUsableText(value: unknown): string {
+  const text = getUnknownString(value);
+  return text && !isUntitledProgramName(text) ? text : "";
+}
+
+function getTodayDateValue(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatMonthYear(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function formatSaveTime(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function getAssignmentDisplayName(assignment: ProgramAssignment): string {
+  const programJson = assignment.programJson;
+  const programName = getUsableText(programJson.program)
+    || getUsableText(programJson.programName)
+    || getUsableText(programJson.athleteProgram)
+    || getUsableText(programJson.blockTheme)
+    || getUsableText(assignment.phaseName)
+    || getUsableText(programJson.phase);
+  const explicitName = getUsableText(assignment.assignmentName);
+  if (explicitName) return explicitName;
+
+  if (programName) {
+    return `${programName}${assignment.weeklyStructure ? ` — ${assignment.weeklyStructure}` : ""}`;
+  }
+
+  const athleteName = getUsableText(programJson.athlete) || getUsableText(programJson.athleteName);
+  const monthYear = formatMonthYear(assignment.startDate || assignment.createdAt);
+  if (athleteName) {
+    return [athleteName, assignment.weeklyStructure, monthYear].filter(Boolean).join(" — ");
+  }
+
+  return `Assigned Program — ${assignment.weeklyStructure || "3-Day Split"}`;
 }
 
 function getWeekLabel(weekIndex: number): string {
@@ -5421,6 +5475,7 @@ function getCompletionDraftFromLog(log: ProgramCompletionLog | undefined, exerci
     status: log?.status || "completed",
     flag: getCompletionFlagFromLog(log, completedJson),
     bestTime: getUnknownString(completedJson?.best_time),
+    completedDate: getUnknownString(completedJson?.completed_date) || log?.completedAt?.slice(0, 10) || "",
     summary: getUnknownString(completedJson?.summary),
     notes: getUnknownString(completedJson?.notes) || log?.notes || "",
     sets,
@@ -5490,12 +5545,109 @@ function getBestTimeFromDraft(draft: CompletionDraft): string {
   const enteredBestTime = draft.bestTime.trim();
   if (enteredBestTime) return enteredBestTime;
 
-  const times = draft.sets
-    .flatMap((set) => [set.time, set.leftTime, set.rightTime])
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value) && value > 0);
+  return getBestTimingValue(draft.sets.flatMap((set) => [set.time, set.leftTime, set.rightTime]));
+}
 
-  return times.length ? String(Math.min(...times)) : "";
+function getBestTimingValue(values: string[]): string {
+  const times = values
+    .map((value) => ({ value: value.trim(), numericValue: Number(value) }))
+    .filter((item) => item.value && Number.isFinite(item.numericValue) && item.numericValue > 0)
+    .sort((a, b) => a.numericValue - b.numericValue);
+
+  return times[0]?.value || "";
+}
+
+function getBestLeftTimeFromDraft(draft: CompletionDraft): string {
+  return getBestTimingValue(draft.sets.map((set) => set.leftTime));
+}
+
+function getBestRightTimeFromDraft(draft: CompletionDraft): string {
+  return getBestTimingValue(draft.sets.map((set) => set.rightTime));
+}
+
+function getPlannedRepsBySet(plannedWork: string, setCount: number): string[] {
+  const ladderMatch = plannedWork.trim().match(/^(\d+(?:\s*\/\s*\d+)+)/);
+  if (ladderMatch) {
+    const ladderValues = ladderMatch[1].split("/").map((value) => value.trim()).filter(Boolean);
+    return Array.from({ length: setCount }, (_, index) => ladderValues[index] || ladderValues[ladderValues.length - 1] || "");
+  }
+
+  const setRepMatch = plannedWork.match(/\d+\s*x\s*(\d+)(?:e)?\b/i);
+  if (setRepMatch) {
+    return Array.from({ length: setCount }, () => setRepMatch[1]);
+  }
+
+  return Array.from({ length: setCount }, () => "");
+}
+
+function getCompletedDateText(draft: CompletionDraft, log: ProgramCompletionLog | undefined): string {
+  const dateValue = draft.completedDate || log?.completedAt?.slice(0, 10);
+  return dateValue ? formatProgramDate(dateValue) : "No date saved";
+}
+
+function getReviewSummaryText(exercise: PlannedExercise, draft: CompletionDraft, hasCompletion: boolean): string {
+  if (!hasCompletion) return "No completion saved";
+  if (draft.status === "missed") return "Marked missed";
+  if (draft.mode === "simple" && draft.status === "completed") return "Completed as prescribed";
+  if (exercise.completionType === "sprint" || exercise.completionType === "cod") {
+    const bestTime = getBestTimeFromDraft(draft);
+    return bestTime ? `Best ${bestTime} sec` : draft.summary || "Timed work logged";
+  }
+  return draft.summary || "Completed as logged";
+}
+
+function getReviewDetailEmptyText(draft: CompletionDraft): string {
+  if (draft.status === "missed") return "Marked missed.";
+  if (draft.mode === "simple" && draft.status === "completed") return "No detailed data entered.";
+  if (draft.mode === "simple") return "No detailed data entered.";
+  return "No actual rows entered.";
+}
+
+function getSaveStateLabel(saveState: CompletionSaveState, lastSavedAt: string, saveError: string): string {
+  if (saveState === "dirty") return "Unsaved changes";
+  if (saveState === "saving") return "Saving...";
+  if (saveState === "saved") return `Saved${lastSavedAt ? ` at ${formatSaveTime(lastSavedAt)}` : ""}`;
+  if (saveState === "error") return saveError || "Save failed";
+  return "Ready";
+}
+
+function getSaveStateTone(saveState: CompletionSaveState): string {
+  if (saveState === "dirty") return "bg-amber-100 text-amber-900";
+  if (saveState === "saving") return "bg-sky-100 text-sky-900";
+  if (saveState === "saved") return "bg-emerald-100 text-emerald-800";
+  if (saveState === "error") return "bg-rose-100 text-rose-900";
+  return "bg-slate-100 text-slate-600";
+}
+
+function getSessionGroupKey(weekIndex: number, dayIndex: number): string {
+  return `${weekIndex}:${dayIndex}`;
+}
+
+function getSessionKeyForExercise(exercise: PlannedExercise): string {
+  return getSessionGroupKey(exercise.weekIndex, exercise.dayIndex);
+}
+
+function getTimedDisplayParts(exercise: PlannedExercise, draft: CompletionDraft): string[] {
+  if (exercise.completionType !== "sprint" && exercise.completionType !== "cod") return [];
+  return [
+    getBestTimeFromDraft(draft) ? `Best ${getBestTimeFromDraft(draft)} sec` : "",
+    getBestLeftTimeFromDraft(draft) ? `Best L ${getBestLeftTimeFromDraft(draft)} sec` : "",
+    getBestRightTimeFromDraft(draft) ? `Best R ${getBestRightTimeFromDraft(draft)} sec` : "",
+  ].filter(Boolean);
+}
+
+function getBulkCompleteDraft(exercise: PlannedExercise, completedDate: string): CompletionDraft {
+  return {
+    logId: getCompletionDraftFromLog(undefined, exercise).logId,
+    mode: "simple",
+    status: "completed",
+    flag: "none",
+    bestTime: "",
+    completedDate,
+    summary: "Completed as prescribed.",
+    notes: "",
+    sets: Array.from({ length: exercise.suggestedRows }, (_, index) => createEmptyCompletionSet(index + 1)),
+  };
 }
 
 function buildCompletedJson(exercise: PlannedExercise, draft: CompletionDraft): Record<string, unknown> {
@@ -5524,6 +5676,9 @@ function buildCompletedJson(exercise: PlannedExercise, draft: CompletionDraft): 
     exercise_key: exercise.key,
     sets,
     best_time: nullableString(getBestTimeFromDraft(draft)),
+    best_left_time: nullableString(getBestLeftTimeFromDraft(draft)),
+    best_right_time: nullableString(getBestRightTimeFromDraft(draft)),
+    completed_date: nullableString(draft.completedDate),
     summary: nullableString(draft.summary),
     notes: nullableString(draft.notes),
     flag: draft.flag,
@@ -5641,9 +5796,15 @@ function AssignmentDetailModal({
   const [activeWeekIndex, setActiveWeekIndex] = useState(0);
   const [completionLogs, setCompletionLogs] = useState<ProgramCompletionLog[]>([]);
   const [completionDrafts, setCompletionDrafts] = useState<Record<string, CompletionDraft>>({});
+  const [sessionCompletionDates, setSessionCompletionDates] = useState<Record<string, string>>({});
   const [expandedExerciseKeys, setExpandedExerciseKeys] = useState<Record<string, boolean>>({});
   const [completionStatus, setCompletionStatus] = useState("");
+  const [saveState, setSaveState] = useState<CompletionSaveState>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [showRawProgramData, setShowRawProgramData] = useState(false);
   const [isSavingCompletion, setIsSavingCompletion] = useState(false);
+  const assignmentDisplayName = getAssignmentDisplayName(assignment);
   const plannedExercises = useMemo(() => getPlannedExercises(assignment.id, assignment.programJson), [assignment.id, assignment.programJson]);
   const plannedWeekIndices = useMemo(() => Array.from(new Set(plannedExercises.map((exercise) => exercise.weekIndex))), [plannedExercises]);
   const selectedWeekIndex = plannedWeekIndices.includes(activeWeekIndex) ? activeWeekIndex : plannedWeekIndices[0] || 0;
@@ -5655,9 +5816,51 @@ function AssignmentDetailModal({
   const displayedCompletionStatus = !canSaveCompletion
     ? "Sign in with Supabase enabled to save digital completion logs."
     : completionStatus;
+  const stickyTabLabel = activeTab === "planned" ? "Planned Program" : activeTab === "complete" ? "Complete Program" : "Review";
 
   function getDraftForExercise(exercise: PlannedExercise): CompletionDraft {
     return completionDrafts[exercise.key] || getCompletionDraftFromLog(getCompletionLogForExercise(completionLogs, exercise), exercise);
+  }
+
+  function markCompletionDirty(): void {
+    setSaveState("dirty");
+    setSaveError("");
+  }
+
+  function markCompletionSaved(message: string): void {
+    setLastSavedAt(new Date().toISOString());
+    setSaveState("saved");
+    setSaveError("");
+    setCompletionStatus(message);
+  }
+
+  function markCompletionError(message: string): void {
+    setSaveState("error");
+    setSaveError(message);
+    setCompletionStatus(message);
+  }
+
+  function getSessionCompletionDate(exercise: PlannedExercise): string {
+    const sessionKey = getSessionKeyForExercise(exercise);
+    const stateDate = sessionCompletionDates[sessionKey];
+    if (stateDate) return stateDate;
+
+    const sessionLog = completionLogs.find((log) => {
+      const completedJson = getRecordValue(log.completedJson);
+      return Number(completedJson?.week_index) === exercise.weekIndex
+        && Number(completedJson?.day_index) === exercise.dayIndex
+        && getUnknownString(completedJson?.completed_date);
+    });
+    const completedJson = getRecordValue(sessionLog?.completedJson);
+    return getUnknownString(completedJson?.completed_date) || sessionLog?.completedAt?.slice(0, 10) || getTodayDateValue();
+  }
+
+  function updateSessionCompletionDate(weekIndex: number, dayIndex: number, value: string): void {
+    setSessionCompletionDates((current) => ({
+      ...current,
+      [getSessionGroupKey(weekIndex, dayIndex)]: value,
+    }));
+    markCompletionDirty();
   }
 
   useEffect(() => {
@@ -5705,6 +5908,7 @@ function AssignmentDetailModal({
         ...updates,
       },
     }));
+    markCompletionDirty();
   }
 
   function updateCompletionSet(exercise: PlannedExercise, setIndex: number, updates: Partial<CompletionSetDraft>): void {
@@ -5755,12 +5959,14 @@ function AssignmentDetailModal({
     }
 
     const draft = draftOverride || getDraftForExercise(exercise);
+    const completedDate = sessionCompletionDates[getSessionKeyForExercise(exercise)] || draft.completedDate || getSessionCompletionDate(exercise);
+    const finalDraft = { ...draft, completedDate };
     const existingLog = draft.logId
       ? completionLogs.find((log) => log.id === draft.logId)
       : getCompletionLogForExercise(completionLogs, exercise);
     const completedAt = new Date().toISOString();
-    const completedJson = buildCompletedJson(exercise, draft);
-    const rpeValue = getFirstRpeValue(draft);
+    const completedJson = buildCompletedJson(exercise, finalDraft);
+    const rpeValue = getFirstRpeValue(finalDraft);
     const input = {
       sessionIndex: exercise.sessionIndex,
       sessionName: `${getWeekLabel(exercise.weekIndex)} · ${exercise.sessionName}`,
@@ -5768,10 +5974,10 @@ function AssignmentDetailModal({
       exerciseName: exercise.exerciseName,
       plannedJson: exercise.plannedJson,
       completedJson,
-      status: draft.status,
+      status: finalDraft.status,
       rpe: rpeValue,
-      painFlag: draft.flag === "pain",
-      notes: draft.notes,
+      painFlag: finalDraft.flag === "pain",
+      notes: finalDraft.notes,
       completedAt,
     };
 
@@ -5787,11 +5993,10 @@ function AssignmentDetailModal({
     setCompletionDrafts((current) => ({
       ...current,
       [exercise.key]: {
-        ...draft,
+        ...finalDraft,
         logId: savedLog.id,
       },
     }));
-    await updateAssignmentInProgressIfNeeded();
 
     return savedLog;
   }
@@ -5803,22 +6008,94 @@ function AssignmentDetailModal({
       status,
       flag: status === "modified" ? "modified" as CompletionFlag : status === "missed" ? "missed" as CompletionFlag : "none" as CompletionFlag,
       summary: status === "completed" ? "Completed as prescribed." : getCompletionStatusLabel(status),
+      completedDate: getSessionCompletionDate(exercise),
       notes: "",
     };
 
     setIsSavingCompletion(true);
+    setSaveState("saving");
     setCompletionStatus(`Saving ${exercise.exerciseName}...`);
 
     try {
       await saveExerciseCompletion(exercise, draft);
-      setCompletionStatus(`${exercise.exerciseName} marked ${getCompletionStatusLabel(status).toLowerCase()}.`);
+      await updateAssignmentInProgressIfNeeded();
+      markCompletionSaved(`${exercise.exerciseName} marked ${getCompletionStatusLabel(status).toLowerCase()}.`);
     } catch (error) {
-      setCompletionStatus(isMissingProgramAssignmentFoundationError(error)
+      markCompletionError(isMissingProgramAssignmentFoundationError(error)
         ? "Completion logs need the program assignment foundation migration before they can sync."
         : `Could not save ${exercise.exerciseName}: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
       setIsSavingCompletion(false);
     }
+  }
+
+  async function bulkCompleteExercises(exercises: PlannedExercise[], scopeLabel: string): Promise<void> {
+    if (!authSession || !supabaseConfig.isConfigured) {
+      setCompletionStatus("Sign in with Supabase enabled to save completion logs.");
+      return;
+    }
+
+    const remainingExercises = exercises.filter((exercise) => !getCompletionLogForExercise(completionLogs, exercise) && !completionDrafts[exercise.key]);
+    if (!remainingExercises.length) {
+      setCompletionStatus(`No untouched exercises remain to complete for ${scopeLabel}. Detailed or already logged work was left unchanged.`);
+      return;
+    }
+
+    setIsSavingCompletion(true);
+    setSaveState("saving");
+    setCompletionStatus(`Completing ${remainingExercises.length} ${remainingExercises.length === 1 ? "exercise" : "exercises"} for ${scopeLabel}...`);
+
+    try {
+      const savedLogs = (await Promise.all(remainingExercises.map((exercise) => saveExerciseCompletion(
+        exercise,
+        getBulkCompleteDraft(exercise, getSessionCompletionDate(exercise)),
+      )))).filter((log): log is ProgramCompletionLog => Boolean(log));
+
+      setCompletionLogs((current) => mergeCompletionLogs(current, savedLogs));
+      await updateAssignmentInProgressIfNeeded();
+      const skippedCount = exercises.length - remainingExercises.length;
+      markCompletionSaved(`Completed ${savedLogs.length} ${savedLogs.length === 1 ? "exercise" : "exercises"} for ${scopeLabel}.${skippedCount ? ` ${skippedCount} already logged or edited ${skippedCount === 1 ? "item was" : "items were"} left unchanged.` : ""}`);
+    } catch (error) {
+      markCompletionError(isMissingProgramAssignmentFoundationError(error)
+        ? "Completion logs need the program assignment foundation migration before they can sync."
+        : `Could not complete ${scopeLabel}: ${error instanceof Error ? error.message : "Unknown error."}`);
+    } finally {
+      setIsSavingCompletion(false);
+    }
+  }
+
+  function applyLiftSetHelper(exercise: PlannedExercise, helper: "planned-reps" | "first-set" | "load-down" | "reps-down"): void {
+    const draft = getDraftForExercise(exercise);
+    const sets = draft.sets.length ? draft.sets : Array.from({ length: exercise.suggestedRows }, (_, index) => createEmptyCompletionSet(index + 1));
+    let nextSets = sets;
+
+    if (helper === "planned-reps") {
+      const plannedReps = getPlannedRepsBySet(exercise.plannedWork, sets.length);
+      nextSets = sets.map((set, index) => ({ ...set, reps: plannedReps[index] || set.reps }));
+    }
+
+    if (helper === "first-set") {
+      const firstSet = sets[0];
+      nextSets = sets.map((set, index) => index === 0 ? set : {
+        ...set,
+        load: firstSet.load,
+        reps: firstSet.reps,
+        rpe: firstSet.rpe,
+        vbtSpeed: firstSet.vbtSpeed,
+      });
+    }
+
+    if (helper === "load-down") {
+      const load = sets.find((set) => set.load.trim())?.load || "";
+      nextSets = load ? sets.map((set) => ({ ...set, load })) : sets;
+    }
+
+    if (helper === "reps-down") {
+      const reps = sets.find((set) => set.reps.trim())?.reps || "";
+      nextSets = reps ? sets.map((set) => ({ ...set, reps })) : sets;
+    }
+
+    updateCompletionDraft(exercise, { sets: nextSets });
   }
 
   async function saveCompletion(): Promise<void> {
@@ -5827,26 +6104,32 @@ function AssignmentDetailModal({
       return;
     }
 
-    const draftedExercises = plannedExercises.filter((exercise) => completionDrafts[exercise.key]);
+    const exercisesToSave = plannedExercises.filter((exercise) => {
+      const hasDraft = completionDrafts[exercise.key];
+      const hasEditedDateForExistingLog = Boolean(sessionCompletionDates[getSessionKeyForExercise(exercise)] && getCompletionLogForExercise(completionLogs, exercise));
+      return hasDraft || hasEditedDateForExistingLog;
+    });
 
-    if (!draftedExercises.length) {
+    if (!exercisesToSave.length) {
       setCompletionStatus("No entered completion details to save. Use Complete for simple work, or open Log Details and enter actuals first.");
       return;
     }
 
     setIsSavingCompletion(true);
+    setSaveState("saving");
     setCompletionStatus("Saving entered completion details...");
 
     try {
-      const savedLogs = (await Promise.all(draftedExercises.map((exercise) => saveExerciseCompletion(exercise))))
+      const savedLogs = (await Promise.all(exercisesToSave.map((exercise) => saveExerciseCompletion(exercise))))
         .filter((log): log is ProgramCompletionLog => Boolean(log));
 
       setCompletionLogs((current) => mergeCompletionLogs(current, savedLogs));
+      await updateAssignmentInProgressIfNeeded();
 
-      setCompletionStatus(`Saved ${savedLogs.length} completion ${savedLogs.length === 1 ? "log" : "logs"}.`);
+      markCompletionSaved(`Saved ${savedLogs.length} completion ${savedLogs.length === 1 ? "log" : "logs"}.`);
       setActiveTab("review");
     } catch (error) {
-      setCompletionStatus(isMissingProgramAssignmentFoundationError(error)
+      markCompletionError(isMissingProgramAssignmentFoundationError(error)
         ? "Completion logs need the program assignment foundation migration before they can sync."
         : `Could not save completion logs: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
@@ -5866,6 +6149,7 @@ function AssignmentDetailModal({
     }
 
     setIsSavingCompletion(true);
+    setSaveState("saving");
     setCompletionStatus("Marking assignment completed...");
 
     try {
@@ -5875,9 +6159,9 @@ function AssignmentDetailModal({
         athleteId: assignment.athleteId,
         cloudAthleteId: assignment.cloudAthleteId || updatedAssignment.athleteId,
       });
-      setCompletionStatus("Assignment marked completed.");
+      markCompletionSaved("Assignment marked completed.");
     } catch (error) {
-      setCompletionStatus(isMissingProgramAssignmentFoundationError(error)
+      markCompletionError(isMissingProgramAssignmentFoundationError(error)
         ? "Program assignments need the foundation migration before status can sync."
         : `Could not mark assignment completed: ${error instanceof Error ? error.message : "Unknown error."}`);
     } finally {
@@ -6018,6 +6302,7 @@ function AssignmentDetailModal({
 
   function renderExerciseDetails(exercise: PlannedExercise, draft: CompletionDraft): ReactNode {
     const rowLabel = exercise.completionType === "sprint" || exercise.completionType === "cod" ? "Add Rep" : exercise.completionType === "mobility" ? "Add Detail Row" : "Add Set";
+    const timingParts = getTimedDisplayParts(exercise, draft);
 
     return (
       <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -6051,6 +6336,29 @@ function AssignmentDetailModal({
           )}
         </div>
 
+        {timingParts.length ? (
+          <div className="mt-3 rounded-xl bg-white px-3 py-2 text-sm font-black text-slate-700">
+            {timingParts.join(" · ")}
+          </div>
+        ) : null}
+
+        {exercise.completionType === "lift" ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => applyLiftSetHelper(exercise, "planned-reps")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+              Copy planned reps
+            </button>
+            <button type="button" onClick={() => applyLiftSetHelper(exercise, "first-set")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+              Copy first set down
+            </button>
+            <button type="button" onClick={() => applyLiftSetHelper(exercise, "load-down")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+              Copy load down
+            </button>
+            <button type="button" onClick={() => applyLiftSetHelper(exercise, "reps-down")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+              Copy reps down
+            </button>
+          </div>
+        ) : null}
+
         <div className="mt-4 grid gap-3">
           {draft.sets.map((set, setIndex) => (
             <div key={`${exercise.key}-set-${setIndex}`} className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -6082,38 +6390,41 @@ function AssignmentDetailModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
       <section className="max-h-[90vh] w-full max-w-6xl overflow-auto rounded-3xl bg-white p-6 shadow-xl">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">Assignment Detail</p>
-            <h2 className="text-2xl font-black text-slate-950">{assignment.assignmentName}</h2>
-            <p className="mt-2 text-sm font-semibold text-slate-500">
-              {[assignment.phaseName, assignment.weeklyStructure, assignment.startDate ? `Starts ${formatProgramDate(assignment.startDate)}` : "", assignment.endDate ? `Ends ${formatProgramDate(assignment.endDate)}` : ""].filter(Boolean).join(" · ")}
+        <div className="sticky top-0 z-20 -mx-6 -mt-6 border-b border-slate-200 bg-white/95 px-6 pb-4 pt-6 backdrop-blur">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm font-black uppercase tracking-wide text-slate-500">Assignment Detail</p>
+              <h2 className="text-2xl font-black text-slate-950">{assignmentDisplayName}</h2>
+              <p className="mt-2 text-sm font-semibold text-slate-500">
+                {[stickyTabLabel, getWeekLabel(selectedWeekIndex), assignment.phaseName, assignment.weeklyStructure, assignment.startDate ? `Starts ${formatProgramDate(assignment.startDate)}` : "", assignment.endDate ? `Ends ${formatProgramDate(assignment.endDate)}` : ""].filter(Boolean).join(" · ")}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <AssignmentStatusPill value={assignment.status} />
+              <span className={`rounded-full px-3 py-1 text-xs font-black ${getSaveStateTone(saveState)}`}>{getSaveStateLabel(saveState, lastSavedAt, saveError)}</span>
+              <button onClick={onClose} className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Close</button>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            {(["planned", "complete", "review"] as AssignmentDetailTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`rounded-xl px-4 py-2 text-xs font-black ${activeTab === tab ? "bg-[#1e94d2] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+              >
+                {tab === "planned" ? "Planned Program" : tab === "complete" ? "Complete Program" : "Review"}
+              </button>
+            ))}
+          </div>
+
+          {displayedCompletionStatus ? <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700">{displayedCompletionStatus}</p> : null}
+          {hasAmbiguousLegacyLogs ? (
+            <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+              Some older completion logs have duplicate exercise matches. New saves use a stable exercise key; review ambiguous older rows before editing them.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <AssignmentStatusPill value={assignment.status} />
-            <button onClick={onClose} className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-black text-slate-700 hover:bg-slate-200">Close</button>
-          </div>
+          ) : null}
         </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {(["planned", "complete", "review"] as AssignmentDetailTab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`rounded-xl px-4 py-2 text-xs font-black ${activeTab === tab ? "bg-[#1e94d2] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-            >
-              {tab === "planned" ? "Planned Program" : tab === "complete" ? "Complete Program" : "Review"}
-            </button>
-          ))}
-        </div>
-
-        {displayedCompletionStatus ? <p className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700">{displayedCompletionStatus}</p> : null}
-        {hasAmbiguousLegacyLogs ? (
-          <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
-            Some older completion logs have duplicate exercise matches. New saves use a stable exercise key; review ambiguous older rows before editing them.
-          </p>
-        ) : null}
 
         {activeTab === "planned" ? (
           <div className="mt-5 grid gap-4">
@@ -6151,9 +6462,19 @@ function AssignmentDetailModal({
                 No recognizable exercises were found in this assignment program JSON.
               </div>
             )}
-            <div className="rounded-2xl border border-slate-200 bg-slate-950 p-4">
-              <p className="text-xs font-black uppercase tracking-wide text-white/60">Read-only Planned Program JSON</p>
-              <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-5 text-white/80">{JSON.stringify(assignment.programJson, null, 2)}</pre>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide text-slate-500">Developer Data</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">Raw planned program data is hidden during normal coaching workflow.</p>
+                </div>
+                <button type="button" onClick={() => setShowRawProgramData((value) => !value)} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
+                  {showRawProgramData ? "Hide Raw Program Data" : "Show Raw Program Data"}
+                </button>
+              </div>
+              {showRawProgramData ? (
+                <pre className="mt-3 max-h-80 overflow-auto rounded-2xl bg-slate-950 p-4 whitespace-pre-wrap text-xs leading-5 text-white/80">{JSON.stringify(assignment.programJson, null, 2)}</pre>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -6168,16 +6489,41 @@ function AssignmentDetailModal({
             {renderWeekTabs()}
             {plannedExercises.length ? (
               <>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">{getWeekLabel(selectedWeekIndex)}</p>
+                    <p className="mt-1 text-sm font-bold text-slate-600">{visibleWeekExercises.length} visible exercises</p>
+                  </div>
+                  <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void bulkCompleteExercises(visibleWeekExercises, `${getWeekLabel(selectedWeekIndex)} visible work`)} className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50">
+                    Complete all visible
+                  </button>
+                </div>
                 <div className="grid gap-4">
                   {visibleExercisesByDay.map((group) => (
                     <div key={`complete-${group.key}`} className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{getWeekLabel(selectedWeekIndex)}</p>
-                      <h3 className="mt-1 text-lg font-black text-slate-950">{group.title}</h3>
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wide text-slate-500">{getWeekLabel(selectedWeekIndex)}</p>
+                          <h3 className="mt-1 text-lg font-black text-slate-950">{group.title}</h3>
+                        </div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+                            Completed Date
+                            <input type="date" value={sessionCompletionDates[group.key] || getSessionCompletionDate(group.exercises[0])} onChange={(event) => updateSessionCompletionDate(group.exercises[0].weekIndex, group.exercises[0].dayIndex, event.target.value)} className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-950" />
+                          </label>
+                          <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void bulkCompleteExercises(group.exercises, `${group.title} ${getWeekLabel(selectedWeekIndex)}`)} className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white hover:bg-slate-800 disabled:opacity-50">
+                            Complete remaining in day
+                          </button>
+                        </div>
+                      </div>
                       <div className="mt-4 grid gap-3">
                         {group.exercises.map((exercise) => {
                           const draft = getDraftForExercise(exercise);
                           const existingLog = getCompletionLogForExercise(completionLogs, exercise);
                           const isDetailsOpen = expandedExerciseKeys[exercise.key];
+                          const hasDetailedDraft = Boolean(completionDrafts[exercise.key]);
+                          const statusLabel = existingLog || hasDetailedDraft ? getCompletionStatusLabel(draft.status) : "";
+                          const detailButtonLabel = isDetailsOpen ? "Hide Details" : existingLog || hasDetailedDraft ? "Edit Details" : "Log Details";
 
                           return (
                             <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -6186,23 +6532,27 @@ function AssignmentDetailModal({
                                   <div className="flex flex-wrap items-center gap-2">
                                     <p className="font-black text-slate-950">{exercise.exerciseName}</p>
                                     <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{completionTypeLabels[exercise.completionType]}</span>
-                                    {existingLog ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Logged</span> : null}
+                                    {existingLog ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">{draft.status === "completed" ? "Completed" : "Logged"}</span> : null}
+                                    {statusLabel ? <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">{statusLabel}</span> : null}
                                   </div>
                                   <p className="mt-1 text-xs font-bold text-slate-500">{exercise.sectionName} · Planned: {exercise.plannedWork}</p>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void quickSaveExercise(exercise, "completed")} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 disabled:opacity-50">
-                                    Complete
+                                    {existingLog && draft.status === "completed" ? "Completed" : "Complete"}
                                   </button>
                                   <button type="button" onClick={() => toggleExerciseDetails(exercise)} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100">
-                                    {isDetailsOpen ? "Hide Details" : "Log Details"}
+                                    {detailButtonLabel}
                                   </button>
-                                  <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void quickSaveExercise(exercise, "modified")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50">
-                                    Modified
-                                  </button>
-                                  <button disabled={isSavingCompletion || !canSaveCompletion} type="button" onClick={() => void quickSaveExercise(exercise, "missed")} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50">
-                                    Missed
-                                  </button>
+                                  <select value="" disabled={isSavingCompletion || !canSaveCompletion} onChange={(event) => {
+                                    const value = event.target.value as ProgramCompletionStatus;
+                                    if (value) void quickSaveExercise(exercise, value);
+                                  }} className="rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 disabled:opacity-50">
+                                    <option value="">Status...</option>
+                                    <option value="modified">Modified</option>
+                                    <option value="missed">Missed</option>
+                                    <option value="partial">Partial</option>
+                                  </select>
                                 </div>
                               </div>
                               {isDetailsOpen ? renderExerciseDetails(exercise, draft) : null}
@@ -6251,6 +6601,8 @@ function AssignmentDetailModal({
                         notes: set.notes,
                       }))
                       .filter((row) => row.parts.length || row.notes);
+                    const timingParts = getTimedDisplayParts(exercise, draft);
+                    const reviewSummary = getReviewSummaryText(exercise, draft, hasCompletion);
 
                     return (
                       <div key={exercise.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -6265,11 +6617,17 @@ function AssignmentDetailModal({
                             {draft.flag !== "none" && hasCompletion ? <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600">Flag: {completionFlagOptions.find((option) => option.value === draft.flag)?.label}</span> : null}
                           </div>
                         </div>
-                        <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+                        <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
                           <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Planned</p><p className="mt-1 font-bold text-slate-800">{exercise.plannedWork}</p></div>
-                          <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Best / Summary</p><p className="mt-1 font-bold text-slate-800">{hasCompletion ? draft.bestTime || draft.summary || "Completed as logged" : "No completion saved"}</p></div>
+                          <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Completion</p><p className="mt-1 font-bold text-slate-800">{reviewSummary}</p></div>
+                          <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Completed Date</p><p className="mt-1 font-bold text-slate-800">{hasCompletion ? getCompletedDateText(draft, existingLog) : "No date saved"}</p></div>
                           <div className="rounded-xl bg-white p-3"><p className="text-xs font-black uppercase tracking-wide text-slate-500">Notes</p><p className="mt-1 whitespace-pre-wrap font-bold text-slate-800">{hasCompletion ? draft.notes || "No notes" : "No notes"}</p></div>
                         </div>
+                        {hasCompletion && timingParts.length ? (
+                          <div className="mt-3 rounded-xl bg-white p-3 text-sm font-black text-slate-800">
+                            {timingParts.join(" · ")}
+                          </div>
+                        ) : null}
                         {hasCompletion && setRows.length ? (
                           <div className="mt-3 grid gap-2">
                             {setRows.map((row) => (
@@ -6281,6 +6639,10 @@ function AssignmentDetailModal({
                                 {row.notes ? <p className="mt-1 text-xs font-semibold text-slate-500">{row.notes}</p> : null}
                               </div>
                             ))}
+                          </div>
+                        ) : hasCompletion ? (
+                          <div className="mt-3 rounded-xl bg-white p-3 text-sm font-bold text-slate-600">
+                            {getReviewDetailEmptyText(draft)}
                           </div>
                         ) : null}
                       </div>
@@ -6343,7 +6705,7 @@ function ProgramHistory({
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-black text-slate-950">{assignment.assignmentName}</h3>
+                    <h3 className="text-lg font-black text-slate-950">{getAssignmentDisplayName(assignment)}</h3>
                     <AssignmentStatusPill value={assignment.status} />
                   </div>
                   <p className="mt-1 text-sm font-semibold text-slate-500">
@@ -7541,7 +7903,7 @@ export default function AthleteProfilingMVP() {
       ...duplicateProgramAssignmentLocal(assignment),
       athleteId: selectedAthleteId,
     }));
-    setCloudStatus(`Duplicated assignment: ${assignment.assignmentName}`);
+    setCloudStatus(`Duplicated assignment: ${getAssignmentDisplayName(assignment)}`);
   }
 
   function archiveAssignment(assignment: ProgramAssignment): void {
@@ -7551,7 +7913,7 @@ export default function AthleteProfilingMVP() {
       ...archiveProgramAssignmentLocal(assignment),
       athleteId: selectedAthleteId,
     }));
-    setCloudStatus(`Archived assignment: ${assignment.assignmentName}`);
+    setCloudStatus(`Archived assignment: ${getAssignmentDisplayName(assignment)}`);
   }
 
   function updateAssignmentInHistory(assignment: ProgramAssignment): void {
