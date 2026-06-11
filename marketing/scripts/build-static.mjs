@@ -9,7 +9,7 @@ const outputDir = join(siteRoot, 'dist');
 await rm(outputDir, { recursive: true, force: true });
 await mkdir(outputDir, { recursive: true });
 
-for (const entry of ['index.html', 'styles.css', 'assets']) {
+for (const entry of ['index.html', 'styles.css', 'assets', 'robots.txt', 'sitemap.xml']) {
   await cp(join(siteRoot, entry), join(outputDir, entry), { recursive: true });
 }
 
