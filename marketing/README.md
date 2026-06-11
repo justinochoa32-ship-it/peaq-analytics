@@ -12,6 +12,20 @@ Create a separate Vercel project from this same GitHub repository and set:
 - Output directory: `dist`
 - Environment variables: none
 
+The `marketing/vercel.json` file also pins the marketing build command and
+output directory so Vercel serves `dist` as the deployment root. In that output,
+`robots.txt` and `sitemap.xml` live at the top level and should resolve at
+`/robots.txt` and `/sitemap.xml`.
+
+If this marketing project is ever deployed with the repository root instead of
+`marketing` as the Vercel root directory, use:
+
+- Build command: `npm --prefix marketing run build`
+- Output directory: `marketing/dist`
+
+Do not reuse the root `vercel.json` for the public marketing domain; that file
+belongs to the authenticated Vite coach app deployment.
+
 Domain mapping:
 
 - `peaqanalytics.com`: public marketing site
