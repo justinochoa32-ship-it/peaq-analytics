@@ -28,8 +28,8 @@ belongs to the authenticated Vite coach app deployment.
 
 Domain mapping:
 
-- `www.peaqanalytics.com`: public marketing site
-- `peaqanalytics.com`: redirect to `www.peaqanalytics.com`
+- `peaqanalytics.com`: public marketing site and canonical domain
+- `www.peaqanalytics.com`: redirects to `peaqanalytics.com`
 - `app.peaqanalytics.com`: existing coach login app
 
 The marketing site does not use Supabase, app auth, scoring logic, CSV imports,

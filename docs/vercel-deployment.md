@@ -38,7 +38,7 @@ Never add a Supabase secret key, service role key, database password, or anythin
 For beta, point the app subdomain at Vercel:
 
 - App domain: `app.peaqanalytics.com`
-- Marketing site later: `peaqanalytics.com`
+- Marketing site: `peaqanalytics.com`
 
 In Vercel:
 
@@ -48,7 +48,7 @@ In Vercel:
 4. Follow Vercel's DNS instructions for the required CNAME record at your domain registrar.
 5. Wait for Vercel to verify the domain and issue SSL.
 
-Keep the apex domain `peaqanalytics.com` available for the future landing page.
+Keep the apex domain `peaqanalytics.com` assigned to the public landing page.
 
 ## Demo QA After Deploy
 
